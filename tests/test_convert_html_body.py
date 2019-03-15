@@ -146,6 +146,44 @@ class TestHTML2SPSPipeline(unittest.TestCase):
                 )
                 self.assertEqual(len(node.attrib), 1)
 
+    def test_pipe_img_in_style_element(self):
+        text = """
+            <root>
+            <p>
+            <b><img src="a04qdr04.gif"/>Texto dentro de 1</b>
+            <i><img src="a04qdr08.gif"/>Texto dentro de <b>texto <sup>2</sup></b> 2</i>
+            </p>
+            <p>
+            <b> <img src="a04qdr04.gif"/> </b>
+            <i> <img src="a04qdr08.gif"/> </i>
+            </p>
+            </root>
+            """
+        expected = """
+            <root>
+            <p>
+            <b><inline-img src="a04qdr04.gif"/>Texto dentro de 1</b>
+            <i><inline-img src="a04qdr08.gif"/>Texto dentro de <b>texto <sup>2</sup></b> 2</i>
+            </p>
+            <p>
+            <img src="a04qdr04.gif"/>
+            <img src="a04qdr08.gif"/>
+            </p>
+            </root>
+            """
+        raw, transformed = self._transform(
+            text, self.pipeline.ImgPipe())
+
+        nodes = transformed.findall('.//img')
+        self.assertEqual(len(nodes), 2)
+        self.assertEqual(nodes[0].parent.tag, 'p')
+        self.assertEqual(nodes[1].parent.tag, 'p')
+
+        nodes = transformed.findall('.//inline-graphic')
+        self.assertEqual(len(nodes), 2)
+        self.assertEqual(nodes[0].parent.tag, 'b')
+        self.assertEqual(nodes[1].parent.tag, 'i')
+
     def test_pipe_li(self):
         text = '<root><li align="x" src="a04qdr04.gif">Texto dentro de <b>li</b> 1</li><li align="x" src="a04qdr08.gif">Texto dentro de <b>li</b> 2</li></root>'
         expected = [b'<list-item><p>Texto dentro de <b>li</b> 1</p></list-item>', b'<list-item><p>Texto dentro de <b>li</b> 2</p></list-item>']

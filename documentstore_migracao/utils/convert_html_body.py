@@ -209,7 +209,14 @@ class HTML2SPSPipeline(object):
 
     class ImgPipe(plumber.Pipe):
         def parser_node(self, node):
-            node.tag = "graphic"
+            p = deepcopy(node.getparent())
+            if p.tag in ('b', 'i', 'u', 'em', 'strong'):
+                if ''.join(p.itertext()).strip():
+                    node.tag = 'inline-graphic'
+                else:
+                    etree.strip_tags(node.getparent(), p.tag)
+                    node.tag = "graphic"
+
             _attrib = deepcopy(node.attrib)
             src = _attrib.pop("src")
 
