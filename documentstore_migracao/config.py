@@ -25,6 +25,7 @@ _default = dict(
     AM_URL_API="http://articlemeta.scielo.org/api/v1",
     STATIC_URL_FILE="http://www.scielo.br/",
     SOURCE_PATH=os.path.join(BASE_PATH, "xml/source"),
+    PRE_CONVERSION_PATH=os.path.join(BASE_PATH, "xml/pre_conversion"),
     CONVERSION_PATH=os.path.join(BASE_PATH, "xml/conversion"),
     SUCCESS_PROCESSING_PATH=os.path.join(BASE_PATH, "xml/success"),
     VALID_XML_PATH=os.path.join(BASE_PATH, "xml/xml_valid"),

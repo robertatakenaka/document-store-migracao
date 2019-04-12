@@ -27,12 +27,71 @@ class TestHTML2SPSPipeline(unittest.TestCase):
         raw, xml = pipeline.SetupPipe().transform(expected_text)
         self.assertIn(expected_text, str(etree.tostring(xml)))
 
-    def test_pipe_remove_empty(self):
-        text = '<root><p>texto<br/><hr/></p><p> <img align="x" src="a04qdr04.gif"/></p><p/><br/><hr/> <img align="x" src="a04qdr04.gif"/></root>'
-        raw, transformed = self._transform(text, self.pipeline.RemoveEmptyPipe())
+    def test_pipe_remove_empty_do_not_remove_img(self):
+        text = '<root><p> <img align="x" src="a04qdr04.gif"/> </p> </root>'
+        expected = '<root><p> <img align="x" src="a04qdr04.gif"/> </p> </root>'
+        raw, transformed = self._transform(
+            text, self.pipeline.RemoveEmptyPipe())
+        resultado = etree.tostring(transformed, encoding="unicode")
         self.assertEqual(
-            etree.tostring(transformed),
-            b'<root><p>texto<br/><hr/></p><p> <img align="x" src="a04qdr04.gif"/></p><br/><hr/> <img align="x" src="a04qdr04.gif"/></root>',
+            expected.replace('>', '>[BREAK]').split('[BREAK]'),
+            resultado.replace('>', '>[BREAK]').split('[BREAK]'),
+        )
+
+    def test_pipe_remove_empty_do_not_remove_a(self):
+        text = '<root><p> <a align="x" src="a04qdr04.gif"/> </p> </root>'
+        expected = '<root><p> <a align="x" src="a04qdr04.gif"/> </p> </root>'
+        raw, transformed = self._transform(
+            text, self.pipeline.RemoveEmptyPipe())
+        resultado = etree.tostring(transformed, encoding="unicode")
+        self.assertEqual(
+            expected.replace('>', '>[BREAK]').split('[BREAK]'),
+            resultado.replace('>', '>[BREAK]').split('[BREAK]'),
+        )
+
+    def test_pipe_remove_empty_do_not_remove_hr(self):
+        text = '<root><p> <hr align="x" src="a04qdr04.gif"/> </p> </root>'
+        expected = '<root><p> <hr align="x" src="a04qdr04.gif"/> </p> </root>'
+        raw, transformed = self._transform(
+            text, self.pipeline.RemoveEmptyPipe())
+        resultado = etree.tostring(transformed, encoding="unicode")
+        self.assertEqual(
+            expected.replace('>', '>[BREAK]').split('[BREAK]'),
+            resultado.replace('>', '>[BREAK]').split('[BREAK]'),
+        )
+
+    def test_pipe_remove_empty_do_not_remove_br(self):
+        text = '<root><p> <br align="x" src="a04qdr04.gif"/> </p> </root>'
+        expected = '<root><p> <br align="x" src="a04qdr04.gif"/> </p> </root>'
+        raw, transformed = self._transform(
+            text, self.pipeline.RemoveEmptyPipe())
+        resultado = etree.tostring(transformed, encoding="unicode")
+        self.assertEqual(
+            expected.replace('>', '>[BREAK]').split('[BREAK]'),
+            resultado.replace('>', '>[BREAK]').split('[BREAK]'),
+        )
+
+    def test_pipe_remove_empty_p(self):
+        text = '<root><p>Colonização micorrízica e concentração de nutrientes em três cultivares de bananeiras em um latossolo amarelo da Amazônia central</p> <p/> </root>'
+        expected = '<root><p>Colonização micorrízica e concentração de nutrientes em três cultivares de bananeiras em um latossolo amarelo da Amazônia central</p>  </root>'
+        raw, transformed = self._transform(
+            text, self.pipeline.RemoveEmptyPipe())
+        resultado = etree.tostring(transformed, encoding="unicode")
+        self.assertEqual(
+            expected.replace('>', '>[BREAK]').split('[BREAK]'),
+            resultado.replace('>', '>[BREAK]').split('[BREAK]'),
+        )
+
+    def test_pipe_remove_empty_bold(self):
+        text = '<root><p>Colonização micorrízica e concentração de nutrientes <bold> </bold> em três cultivares de bananeiras em um latossolo amarelo</p> </root>'
+        expected = '<root><p>Colonização micorrízica e concentração de nutrientes  em três cultivares de bananeiras em um latossolo amarelo</p> </root>'
+        raw, transformed = self._transform(
+            text, self.pipeline.RemoveEmptyPipe())
+
+        resultado = etree.tostring(transformed, encoding="unicode")
+        self.assertEqual(
+            expected.replace('>', '>[BREAK]').split('[BREAK]'),
+            resultado.replace('>', '>[BREAK]').split('[BREAK]'),
         )
 
     def test_pipe_remove_attribute_style(self):
@@ -58,6 +117,57 @@ class TestHTML2SPSPipeline(unittest.TestCase):
             etree.tostring(transformed),
             b'<root><p align="x">bla</p><p> continua outra linha</p><p baljlba="1"/><td><break/></td><sec/></root>',
         )
+
+    def test_pipe_br_alt(self):
+        text = '<root><p><sup>I</sup>M.Sc em Ciências Agrárias, Universidade Federal do Amazonas - UFAM (email: <br/>arlem@inpa.gov.br</p></root>'
+        expected = '<root><p><sup>I</sup>M.Sc em Ciências Agrárias, Universidade Federal do Amazonas - UFAM (email: </p><p>arlem@inpa.gov.br</p></root>'
+        raw, transformed = self._transform(text, self.pipeline.BRPipe())
+        self.assertEqual(
+            etree.tostring(transformed, encoding="unicode"),
+            expected
+        )
+
+    def test_pipe_br_email(self):
+        text = '<root><p><sup>I</sup>M.Sc em Ciências Agrárias, Universidade Federal do Amazonas - UFAM (email: <a href="mailto:arlem@inpa.gov.br">arlem@inpa.gov.br</a>) <br/><sup>II</sup>Pesquisador do Instituto Nacional de Pesquisas da Amazônia - INPA, C. Postal 478, 69011-970, Manaus, Amazonas (email: <a href="mailto:luizoli@inpa.gov.br)">luizoli@inpa.gov.br</a>), Bolsista do CNPq e Professor dos cursos de PG do INPA e UFAM <br/><sup>III</sup>Professor Dr. do Departamento de Produção Animal e Vegetal - DPAV/FCA/UFAM, Av. Gal. Rodrigo Otávio Jordão Ramos, 3000, Manaus, Amazonas </p></root>'
+        expected = '<root><p><sup>I</sup>M.Sc em Ciências Agrárias, Universidade Federal do Amazonas - UFAM (email: <a href="mailto:arlem@inpa.gov.br">arlem@inpa.gov.br</a>) </p><p><sup>II</sup>Pesquisador do Instituto Nacional de Pesquisas da Amazônia - INPA, C. Postal 478, 69011-970, Manaus, Amazonas (email: <a href="mailto:luizoli@inpa.gov.br)">luizoli@inpa.gov.br</a>), Bolsista do CNPq e Professor dos cursos de PG do INPA e UFAM </p><p><sup>III</sup>Professor Dr. do Departamento de Produção Animal e Vegetal - DPAV/FCA/UFAM, Av. Gal. Rodrigo Otávio Jordão Ramos, 3000, Manaus, Amazonas </p></root>'
+
+        expected_items = [
+            '<p><sup>I</sup>M.Sc em Ciências Agrárias, Universidade Federal do Amazonas - UFAM (email: <a href="mailto:arlem@inpa.gov.br">arlem@inpa.gov.br</a>) </p>',
+            '<p><sup>II</sup>Pesquisador do Instituto Nacional de Pesquisas da Amazônia - INPA, C. Postal 478, 69011-970, Manaus, Amazonas (email: <a href="mailto:luizoli@inpa.gov.br)">luizoli@inpa.gov.br</a>), Bolsista do CNPq e Professor dos cursos de PG do INPA e UFAM </p>',
+            '<p><sup>III</sup>Professor Dr. do Departamento de Produção Animal e Vegetal - DPAV/FCA/UFAM, Av. Gal. Rodrigo Otávio Jordão Ramos, 3000, Manaus, Amazonas </p>'
+        ]
+        raw, transformed = self._transform(text, self.pipeline.BRPipe())
+        self.assertEqual(3, len(transformed.findall('.//p')))
+        for i, p in enumerate(transformed.findall('.//p')):
+            with self.subTest(i):
+                self.assertEqual(
+                    etree.tostring(p, encoding="unicode"),
+                    expected_items[i]
+                )
+
+    def test_pipe_br_and_p(self):
+        filename = os.path.join(SAMPLES_PATH, "body.txt")
+        with open(filename) as fp:
+            text = fp.read()
+        xml = etree.fromstring(text)
+        self.assertEqual(len(xml.findall('.//p')), 97)
+        self.assertEqual(len(xml.findall('.//br')), 4)
+
+        data = self.pipeline.SetupPipe().transform(text)
+        data = self.pipeline.DeprecatedHTMLTagsPipe().transform(data)
+        data = self.pipeline.RemoveExcedingStyleTagsPipe().transform(data)
+
+        # open(filename+'1.alt', 'w').write(etree.tostring(data[1], encoding="unicode"))
+        # data = self.pipeline.RemoveEmptyPipe().transform(data)
+        # open(filename+'2.alt', 'w').write(etree.tostring(data[1], encoding="unicode"))
+        data = self.pipeline.RemoveStyleAttributesPipe().transform(data)
+
+        raw, transformed = self.pipeline.BRPipe().transform(data)
+        self.assertEqual(len(transformed.findall('.//br')), 0)
+
+        # raw, transformed = self.pipeline.PPipe().transform(data)
+
+        self.assertEqual(len(transformed.findall('.//p')), 97+4)
 
     def test_pipe_p(self):
         text = '<root><p align="x" id="y">bla</p><p baljlba="1"/></root>'

@@ -9,13 +9,17 @@ from documentstore_migracao.utils import string, convert_html_body
 logger = logging.getLogger(__name__)
 
 
-def str2objXML(str):
-    _string = string.normalize(str)
-    try:
-        return etree.fromstring("<body>%s</body>" % (str))
-    except etree.XMLSyntaxError as e:
-        # logger.exception(e)
-        return etree.fromstring("<body></body>")
+def unescape_body_html(obj_body):
+    _string = obj_body.findtext('.//p')
+    if _string:
+        _string = string.normalize(_string)
+
+        try:
+            return etree.fromstring(
+                "<body>{}</body>".format(_string))
+        except etree.XMLSyntaxError:
+            return obj_body
+    return obj_body
 
 
 def get_static_assets(xml_et):
@@ -67,6 +71,14 @@ def find_medias(obj_body):
 
 
 def parser_body_xml(obj_body):
+    str_body = etree.tostring(obj_body, encoding="unicode")
+    convert = convert_html_body.HTML2SPSPipeline()
+    html = convert.deploy(str_body)
+
+    return html[1]
+
+
+def old_parser_body_xml(obj_body):
 
     txt_body = getattr(obj_body.find("./p"), "text", "")
     convert = convert_html_body.HTML2SPSPipeline()

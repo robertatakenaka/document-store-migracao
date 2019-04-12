@@ -19,10 +19,14 @@ def conversion_article_xml(file_xml_path):
     obj_xml.set("specific-use", "sps-1.8")
     obj_xml.set("dtd-version", "1.1")
 
+    unescaped_body_items = []
+
     for index, body in enumerate(obj_xml.xpath("//body"), start=1):
         logger.info("Processando body numero: %s" % index)
+        unescaped_body = xml.unescape_body_html(body)
+        unescaped_body_items.append(unescaped_body)
 
-        obj_html_body = xml.parser_body_xml(body)
+        obj_html_body = xml.parser_body_xml(unescaped_body)
         # sobrecreve o html escapado anterior pelo novo xml tratado
         body.getparent().replace(body, obj_html_body)
 
@@ -33,6 +37,15 @@ def conversion_article_xml(file_xml_path):
     new_file_xml_path = os.path.join(
         config.get("CONVERSION_PATH"), "%s.%s.%s" % (fname, languages, fext)
     )
+    if config.get("PRE_CONVERSION_PATH"):
+        pre_conversion_xml_path = os.path.join(
+            config.get("PRE_CONVERSION_PATH"), "%s.%s.txt" % (fname, languages)
+        )
+        files.write_file(
+            pre_conversion_xml_path,
+            '\n\n'.join(
+                [etree.tostring(item, encoding="unicode")
+                 for item in unescaped_body_items]))
 
     files.write_file(
         new_file_xml_path,
