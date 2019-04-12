@@ -60,7 +60,7 @@ class HTML2SPSPipeline(object):
 
     class SetupPipe(plumber.Pipe):
         def transform(self, data):
-            xml = utils_xml.str2objXML(data)
+            xml = etree.fromstring(data)
             return data, xml
 
     class DeprecatedHTMLTagsPipe(plumber.Pipe):
@@ -176,8 +176,8 @@ class HTML2SPSPipeline(object):
         ]
 
         def replace_CHANGE_BR_by_close_p_open_p(self, xml):
-            _xml = etree.tostring(xml)
-            _xml = _xml.replace(b"<CHANGE_BR/>", b"</p><p>")
+            _xml = etree.tostring(xml, encoding="unicode")
+            _xml = _xml.replace("<CHANGE_BR/>", "</p><p>")
             return etree.fromstring(_xml)
 
         def transform(self, data):
@@ -590,7 +590,7 @@ class HTML2SPSPipeline(object):
             parent = node.getparent()
             if parent.tag in self.TAGS:
                 node.tag = "inline-graphic"
-            else:
+            elif parent.getparent():
                 etree.strip_tags(parent.getparent(), parent.tag)
 
         def transform(self, data):
