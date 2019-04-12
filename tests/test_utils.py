@@ -79,24 +79,21 @@ class TestUtilsFiles(unittest.TestCase):
 
 
 class TestUtilsXML(unittest.TestCase):
-    def test_str2objXML(self):
 
-        expected_text = "<a><b>bar</b></a>"
-        obj = xml.str2objXML(expected_text)
+    def test_unescape_body_html(self):
+        text = "<body><p>&lt;b&gt;bar&lt;/b&gt;</p></body>"
+        expected_text = "<body><b>bar</b></body>"
+        node = etree.fromstring(text)
+        obj = xml.unescape_body_html(node)
+        self.assertIn(expected_text, etree.tostring(obj, encoding="unicode"))
 
-        self.assertIn(expected_text, str(etree.tostring(obj)))
-
-    @patch("documentstore_migracao.utils.xml.etree.fromstring")
-    def test_str2objXML_except(self, mk_fromstring):
-        def _side_effect(arg):
-            if arg == "<body></body>":
-                return b"<body></body>"
-            raise etree.XMLSyntaxError("Test Error - READING XML", 1, 1, 1)
-
-        mk_fromstring.side_effect = _side_effect
-        obj = xml.str2objXML("<a><b>bar</b></a>")
-
-        self.assertIn(b"<body></body>", obj)
+    def test_unescape_body_html_no_changes(self):
+        body_html = "<body><p>&lt;/b&gt;</p></body>"
+        body_tree = etree.fromstring(body_html)
+        obj = xml.unescape_body_html(body_tree)
+        self.assertEqual(
+            "<body><p>&lt;/b&gt;</p></body>",
+            etree.tostring(obj, encoding="unicode"))
 
     def test_find_medias(self):
 
@@ -110,12 +107,12 @@ class TestUtilsXML(unittest.TestCase):
         self.assertEqual(len(medias), 3)
 
     def test_pipe_body_xml(self):
-        with open(os.path.join(SAMPLES_PATH, "S0036-36341997000100003.xml"), "r") as f:
-            text = f.read()
-
-        obj = etree.fromstring(text)
-        html = xml.parser_body_xml(obj)
-        tags = ("div", "img", "li", "ol", "ul", "i", "b", "a")
+        tags = ("div", "li", "ol", "ul", "i", "b", "a")
+        body = etree.Element('body')
+        for tag in tags:
+            e = etree.Element(tag)
+            body.append(e)
+        html = xml.parser_body_xml(body)
         for tag in tags:
             with self.subTest(tag=tag):
                 expected = html.findall(".//%s" % tag)

@@ -1,0 +1,55 @@
+<body>
+
+	<!--version=html-->
+	<p>
+
+		<b>
+
+			<font face="Verdana, Arial, Helvetica, sans-serif" size="4">
+
+				<a name="volta" id="volta"/>Colonização micorrízica e concentração de nutrientes em três cultivares de bananeiras em um latossolo amarelo da Amazônia central<sup>
+
+				<a href="#nota">1</a>
+
+				</sup>
+
+			</font>
+
+		</b>
+
+	</p> 
+
+	<p>
+
+		<b>
+
+		<font face="Verdana, Arial, Helvetica, sans-serif" size="3">Arbuscular mycorrhizal colonization and nutrient concentration of three cultivars of banana on a central Amazonian oxisol </font>
+
+		</b>
+
+	</p> 
+	 
+	<p>
+
+		<font face="Verdana, Arial, Helvetica, sans-serif" size="2">
+
+		<b>Arlem Nascimento de Oliveira<sup>I</sup>; Luiz Antonio de Oliveira<sup>II</sup>; Antenor Francisco de Figueiredo<sup>III</sup>
+
+		</b>
+
+		</font>
+
+	</p>
+	<p>
+
+		<font face="Verdana, Arial, Helvetica, sans-serif" size="2">
+
+		<sup>I</sup>M.Sc em Ciências Agrárias, Universidade Federal do Amazonas - UFAM (email: <a href="mailto:arlem@inpa.gov.br">arlem@inpa.gov.br</a>) <br/>
+
+		<sup>II</sup>Pesquisador do Instituto Nacional de Pesquisas da Amazônia - INPA, C. Postal 478, 69011-970, Manaus, Amazonas (email: <a href="mailto:luizoli@inpa.gov.br)">luizoli@inpa.gov.br</a>), Bolsista do CNPq e Professor dos cursos de PG do INPA e UFAM <br/>
+
+		<sup>III</sup>Professor Dr. do Departamento de Produção Animal e Vegetal - DPAV/FCA/UFAM, Av. Gal. Rodrigo Otávio Jordão Ramos, 3000, Manaus, Amazonas </font>
+
+	</p> 
+
+</body>

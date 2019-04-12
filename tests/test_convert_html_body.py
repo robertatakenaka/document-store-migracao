@@ -93,6 +93,29 @@ class TestHTML2SPSPipeline(unittest.TestCase):
             expected.replace('>', '>[BREAK]').split('[BREAK]'),
             resultado.replace('>', '>[BREAK]').split('[BREAK]'),
         )
+
+    def test_pipe_remove_empty_p(self):
+        text = '<root><p>Colonização micorrízica e concentração de nutrientes em três cultivares de bananeiras em um latossolo amarelo da Amazônia central</p> <p/> </root>'
+        expected = '<root><p>Colonização micorrízica e concentração de nutrientes em três cultivares de bananeiras em um latossolo amarelo da Amazônia central</p>  </root>'
+        raw, transformed = self._transform(
+            text, self.pipeline.RemoveEmptyPipe())
+        resultado = etree.tostring(transformed, encoding="unicode")
+        self.assertEqual(
+            expected.replace('>', '>[BREAK]').split('[BREAK]'),
+            resultado.replace('>', '>[BREAK]').split('[BREAK]'),
+        )
+
+    def test_pipe_remove_empty_bold(self):
+        text = '<root><p>Colonização micorrízica e concentração de nutrientes <bold> </bold> em três cultivares de bananeiras em um latossolo amarelo</p> </root>'
+        expected = '<root><p>Colonização micorrízica e concentração de nutrientes  em três cultivares de bananeiras em um latossolo amarelo</p> </root>'
+        raw, transformed = self._transform(
+            text, self.pipeline.RemoveEmptyPipe())
+
+        resultado = etree.tostring(transformed, encoding="unicode")
+        self.assertEqual(
+            expected.replace('>', '>[BREAK]').split('[BREAK]'),
+            resultado.replace('>', '>[BREAK]').split('[BREAK]'),
+        )
     def test_pipe_remove_attribute_style(self):
         text = '<root><p style="x">texto <b style="x"></b></p> <td style="bla"><caption style="x"/></td></root>'
         raw, transformed = self._transform(
@@ -116,6 +139,51 @@ class TestHTML2SPSPipeline(unittest.TestCase):
             etree.tostring(transformed),
             b'<root><p align="x">bla</p><p> continua outra linha</p><p baljlba="1"/><td><break/></td><sec/></root>',
         )
+
+    def test_pipe_br_alt(self):
+        text = '<root><p><sup>I</sup>M.Sc em Ciências Agrárias, Universidade Federal do Amazonas - UFAM (email: <br/>arlem@inpa.gov.br</p></root>'
+        expected = '<root><p><sup>I</sup>M.Sc em Ciências Agrárias, Universidade Federal do Amazonas - UFAM (email: </p><p>arlem@inpa.gov.br</p></root>'
+        raw, transformed = self._transform(text, self.pipeline.BRPipe())
+        self.assertEqual(
+            etree.tostring(transformed, encoding="unicode"),
+            expected
+        )
+
+    def test_pipe_br_email(self):
+        text = '<root><p><sup>I</sup>M.Sc em Ciências Agrárias, Universidade Federal do Amazonas - UFAM (email: <a href="mailto:arlem@inpa.gov.br">arlem@inpa.gov.br</a>) <br/><sup>II</sup>Pesquisador do Instituto Nacional de Pesquisas da Amazônia - INPA, C. Postal 478, 69011-970, Manaus, Amazonas (email: <a href="mailto:luizoli@inpa.gov.br)">luizoli@inpa.gov.br</a>), Bolsista do CNPq e Professor dos cursos de PG do INPA e UFAM <br/><sup>III</sup>Professor Dr. do Departamento de Produção Animal e Vegetal - DPAV/FCA/UFAM, Av. Gal. Rodrigo Otávio Jordão Ramos, 3000, Manaus, Amazonas </p></root>'
+        expected = '<root><p><sup>I</sup>M.Sc em Ciências Agrárias, Universidade Federal do Amazonas - UFAM (email: <a href="mailto:arlem@inpa.gov.br">arlem@inpa.gov.br</a>) </p><p><sup>II</sup>Pesquisador do Instituto Nacional de Pesquisas da Amazônia - INPA, C. Postal 478, 69011-970, Manaus, Amazonas (email: <a href="mailto:luizoli@inpa.gov.br)">luizoli@inpa.gov.br</a>), Bolsista do CNPq e Professor dos cursos de PG do INPA e UFAM </p><p><sup>III</sup>Professor Dr. do Departamento de Produção Animal e Vegetal - DPAV/FCA/UFAM, Av. Gal. Rodrigo Otávio Jordão Ramos, 3000, Manaus, Amazonas </p></root>'
+
+        expected_items = [
+            '<p><sup>I</sup>M.Sc em Ciências Agrárias, Universidade Federal do Amazonas - UFAM (email: <a href="mailto:arlem@inpa.gov.br">arlem@inpa.gov.br</a>) </p>',
+            '<p><sup>II</sup>Pesquisador do Instituto Nacional de Pesquisas da Amazônia - INPA, C. Postal 478, 69011-970, Manaus, Amazonas (email: <a href="mailto:luizoli@inpa.gov.br)">luizoli@inpa.gov.br</a>), Bolsista do CNPq e Professor dos cursos de PG do INPA e UFAM </p>',
+            '<p><sup>III</sup>Professor Dr. do Departamento de Produção Animal e Vegetal - DPAV/FCA/UFAM, Av. Gal. Rodrigo Otávio Jordão Ramos, 3000, Manaus, Amazonas </p>'
+        ]
+        raw, transformed = self._transform(text, self.pipeline.BRPipe())
+        self.assertEqual(3, len(transformed.findall('.//p')))
+        for i, p in enumerate(transformed.findall('.//p')):
+            with self.subTest(i):
+                self.assertEqual(
+                    etree.tostring(p, encoding="unicode"),
+                    expected_items[i]
+                )
+
+    def test_pipe_br_and_p_body(self):
+        filename = os.path.join(SAMPLES_PATH, "body.txt")
+        with open(filename) as fp:
+            text = fp.read()
+        xml = etree.fromstring(text)
+        self.assertEqual(len(xml.findall('.//p')), 4)
+        self.assertEqual(len(xml.findall('.//br')), 2)
+
+        data = self.pipeline.SetupPipe().transform(text)
+        data = self.pipeline.DeprecatedHTMLTagsPipe().transform(data)
+        data = self.pipeline.RemoveExcedingStyleTagsPipe().transform(data)
+        data = self.pipeline.RemoveEmptyPipe().transform(data)
+        data = self.pipeline.RemoveStyleAttributesPipe().transform(data)
+        raw, transformed = self.pipeline.BRPipe().transform(data)
+
+        self.assertEqual(len(transformed.findall('.//br')), 0)
+        self.assertEqual(len(transformed.findall('.//p')), 4+2)
 
     def test_pipe_p(self):
         text = '<root><p align="x" id="y">bla</p><p baljlba="1"/></root>'
@@ -353,26 +421,67 @@ class TestHTML2SPSPipeline(unittest.TestCase):
                 self.assertEqual(len(node.attrib), 0)
                 self.assertEqual(text, etree.tostring(node))
 
-    def test_pipe_a_mailto(self):
+    def test_pipe_a__parser_node_external_link_for_uri(self):
+        expected = {
+            '{http://www.w3.org/1999/xlink}href': 'http://bla.org',
+            'ext-link-type': 'uri'
+        }
+        xml = etree.fromstring(
+            '<root><a href="http://bla.org">texto</a></root>')
+        node = xml.find('.//a')
+
+        self.pipeline.APipe()._parser_node_external_link(node)
+
+        self.assertEqual(set(expected.keys()), set(node.attrib.keys()))
+        self.assertEqual(
+            node.attrib.get(
+                '{http://www.w3.org/1999/xlink}href'), 'http://bla.org')
+        self.assertEqual(
+            node.attrib.get('ext-link-type'), 'uri')
+        self.assertEqual(node.tag, 'ext-link')
+        self.assertEqual(node.text, 'texto')
+        self.assertEqual(set(expected.keys()), set(node.attrib.keys()))
+
+    def test_pipe_a___parser_node_external_link_for_email(self):
+        """
+        <ext-link ext-link-type="email" xlink:href="mailto:nuesslin@lrz.tum.de">
+nuesslin@lrz.tum.de</ext-link>
+        """
+        expected_keys = [
+            '{http://www.w3.org/1999/xlink}href',
+            'ext-link-type'
+        ]
+        href = ['mailto:a@scielo.org', 'mailto:x@scielo.org']
+        content = ['Enviar e-mail para A', '<img src="mail.gif" />']
+        expected = """<root>
+        <p><ext-link ext-link-type="email" xlink:href="mailto:a@scielo.org">Enviar e-mail para A</ext-link></p>
+        <p><ext-link ext-link-type="email" xlink:href="mailto:x@scielo.org"><img src="mail.gif" /></ext-link></p>
+        </root>"""
         text = """<root>
         <p><a href="mailto:a@scielo.org">Enviar e-mail para A</a></p>
         <p><a href="mailto:x@scielo.org"><img src="mail.gif" /></a></p>
-        <p><a href="mailto:a04qdr04@scielo.org">Enviar e-mail para a04qdr04</a></p>
-        <p><a href="mailto:a04qdr08@scielo.org">Enviar e-mail para mim</a></p>
         </root>"""
-        raw, transformed = self._transform(text, self.pipeline.APipe())
+        xml = etree.fromstring(text)
 
-        nodes = transformed.findall(".//p/p")
-        self.assertEqual(len(nodes), 4)
-        texts = [
-            b"<p>Enviar e-mail para A<email>a@scielo.org</email></p>",
-            b'<p><img src="mail.gif"/><email>x@scielo.org</email></p>',
-            b"<p>Enviar e-mail para a04qdr04<email>a04qdr04@scielo.org</email></p>",
-            b"<p>Enviar e-mail para mim<email>a04qdr08@scielo.org</email></p>",
-        ]
-        for node, text in zip(nodes, texts):
-            with self.subTest(node=node):
-                self.assertEqual(text, etree.tostring(node).strip())
+        for i, node in enumerate(xml.findall('.//a')):
+            with self.subTest(i):
+                self.pipeline.APipe()._parser_node_external_link(node, "email")
+
+                self.assertEqual(set(expected_keys), set(node.attrib.keys()))
+                self.assertIn(
+                    node.attrib.get(
+                        '{http://www.w3.org/1999/xlink}href'),
+                    href[i]
+                    )
+                self.assertEqual(
+                    node.attrib.get('ext-link-type'), 'email')
+                self.assertEqual(node.tag, 'ext-link')
+                if node.text:
+                    self.assertEqual(node.text, 'Enviar e-mail para A')
+                else:
+                    self.assertIn(
+                        '<img src="mail.gif"/>',
+                        etree.tostring(node, encoding="unicode"))
 
     def test_pipe_a_anchor(self):
         node = self.etreeXML.find(".//font[@size='1']")
@@ -389,9 +498,9 @@ class TestHTML2SPSPipeline(unittest.TestCase):
         text = [
             "<root>",
             '<p><a href="https://new.scielo.br"/></p>',
-            '<p><a href="https://www.google.com"><img src="mail.gif"/></a></p>',
-            '<p><a href="https://www.bbc.com">BBC</a></p>',
-            '<p><a href="http://www.bbc.com">Enviar <b>e-mail para</b> mim</a></p>',
+            '<p><a href="//www.google.com"><img src="mail.gif"/></a></p>',
+            '<p><a href="ftp://www.bbc.com">BBC</a></p>',
+            '<p><a href="../www.bbc.com">Enviar <b>e-mail para</b> mim</a></p>',
             "</root>",
         ]
         text = "".join(text)
@@ -401,9 +510,9 @@ class TestHTML2SPSPipeline(unittest.TestCase):
         self.assertEqual(len(nodes), 4)
         data = [
             ("https://new.scielo.br", b""),
-            ("https://www.google.com", b'<img src="mail.gif"/>'),
-            ("https://www.bbc.com", b"BBC"),
-            ("http://www.bbc.com", b"Enviar <b>e-mail para</b> mim"),
+            ("//www.google.com", b'<img src="mail.gif"/>'),
+            ("ftp://www.bbc.com", b"BBC"),
+            ("../www.bbc.com", b"Enviar <b>e-mail para</b> mim"),
         ]
         for node, item in zip(nodes, data):
             link, content = item
@@ -421,10 +530,11 @@ class TestHTML2SPSPipeline(unittest.TestCase):
         self.assertIsNone(transformed.find(".//a"))
 
     def test_pipe_a_href_error(self):
-        text = "<root><a href='error'>Teste</a></root>"
+        text = '<root><a href="error">Teste</a></root>'
         raw, transformed = self._transform(text, self.pipeline.APipe())
         self.assertEqual(
-            etree.tostring(transformed).strip(), b"<root><a>Teste</a></root>"
+            etree.tostring(transformed).strip(),
+            b'<root><a href="error">Teste</a></root>'
         )
 
     def test_pipe_td(self):
