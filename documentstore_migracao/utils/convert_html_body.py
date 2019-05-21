@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 
 def _remove_element_or_comment(node):
+    if node is None:
+        return
     parent = node.getparent()
     if parent is not None:
         if node.tail:
@@ -333,7 +335,75 @@ class HTML2SPSPipeline(object):
 
     class ANamePipe(CustomPipe):
 
-        def find_a_href(self, root, _id_name):
+        def _find_table_wrap_content(self, siblings):
+            for node in siblings:
+                for tag in ['table', 'img', 'a']:
+                    _node = node.find('.//{}'.format(tag))
+                    if _node is not None:
+                        return _node
+
+        def _complete_table_wrap(self, tablewrap_node, _max=10):
+            siblings = list(tablewrap_node.getparent().itersiblings())[:_max]
+            table = self._find_table_wrap_content(siblings)
+            if table is not None:
+                filename = table.attrib.get("src") or table.attrib.get("href")
+                if filename:
+                    basename = os.path.basename(filename)
+                    name, ext = os.path.splitext(basename)
+                    name = name.replace('t0', 't')
+                for sibling_node in siblings:
+                    end = self._add_table_wrap_item(
+                        sibling_node, table, tablewrap_node)
+                    if end:
+                        break
+
+        def _add_table_wrap_item(self, sibling_node, table, tablewrap_node):
+            found = [item
+                     for item in sibling_node.findall('.//*')
+                     if item is table]
+            if len(found) > 0:
+                tablewrap_node.append(deepcopy(table))
+                sibling_node.remove(table)
+                return True
+            tablewrap_node.text = tablewrap_node.text or "" + \
+                sibling_node.text or ""
+            if tablewrap_node.find('.//caption') is None:
+                self._add_label_and_caption(tablewrap_node, sibling_node)
+            for child in sibling_node.getchildren():
+                if tablewrap_node.find('.//caption') is None:
+                    self._add_label_and_caption(tablewrap_node, child)
+                if tablewrap_node.find('.//caption') is None:
+                    tablewrap_node.append(deepcopy(child))
+                sibling_node.remove(child)
+
+        def _find_label_and_caption(self, sibling_node):
+            label_and_caption = ' '.join(sibling_node.itertext())
+            label_and_caption = label_and_caption.strip().lower()
+            if label_and_caption.startswith('tab'):
+                parts = label_and_caption.strip().split(' ')
+                label = ' '.join(parts[:2])
+                caption = ' '.join(parts[2:])
+                for child in sibling_node.getchildren():
+                    sibling_node.remove(child)
+                sibling_node.text = ""
+                sibling_node.tail = ""
+
+                return label, caption
+
+        def _add_label_and_caption(self, tablewrap_node, node):
+            label_and_caption = ""
+            if tablewrap_node.find('.//caption') is None:
+                label_and_caption = self._find_label_and_caption(node)
+            if label_and_caption:
+                label = etree.Element('label')
+                caption = etree.Element('caption')
+                title = etree.Element('title')
+                label.text, title.text = label_and_caption
+                caption.append(title)
+                tablewrap_node.append(label)
+                tablewrap_node.append(caption)
+
+        def _find_a_href(self, root, _id_name):
             return root.find('.//a[@href="#{}"]'.format(_id_name))
 
         def parser_node(self, node):
@@ -346,11 +416,14 @@ class HTML2SPSPipeline(object):
             root = node.getroottree()
             if _id_name.startswith("tx"):
                 _remove_element_or_comment(node)
-                _remove_element_or_comment(self.find_a_href(root, _id_name))
+                _remove_element_or_comment(self._find_a_href(root, _id_name))
+                return
             elif _id_name.startswith("t"):
-                a_href = self.find_a_href(root, _id_name)
-                if a_href and a_href.text and 'tab' in a_href.text.lower():
+                a_href = self._find_a_href(root, _id_name)
+                if a_href is not None and a_href.text and \
+                        'tab' in a_href.text.lower():
                     node.tag = "table-wrap"
+                    self._complete_table_wrap(node)
                 else:
                     node.tag = "fn"
             elif _id_name[0] in "fcq":
@@ -402,6 +475,7 @@ class HTML2SPSPipeline(object):
             _attrib = deepcopy(node.attrib)
             src = _attrib.pop("src")
 
+            root = node.getroottree()
             node.attrib.clear()
             node.set("{http://www.w3.org/1999/xlink}href", src)
 
@@ -415,8 +489,8 @@ class HTML2SPSPipeline(object):
 
             n_id = gera_id(new_element[0] + id_name[-1])
             if n_id:
-                root = node.getroottree()
-                ref_node = root.find("//%s[@ref-id='%s']" % (new_element, n_id))
+                ref_node = root.find(
+                    "//%s[@ref-id='%s']" % (new_element, n_id))
                 if ref_node is not None:
                     _node = deepcopy(node)
                     ref_node.append(_node)

@@ -1038,3 +1038,110 @@ class Test__remove_element_or_comment(unittest.TestCase):
             etree.tostring(xml),
             b'<root><graphic xmlns:ns2="http://www.w3.org/1999/xlink" ns2:href="/img/revistas/gs/v29n2/seta.gif"/></root>',
         )
+
+
+class Test_AName_Pipe_TableIsImg(unittest.TestCase):
+
+    def setUp(self):
+        self.pipeline = HTML2SPSPipeline(pid="S0101-20612010000500033")
+        text = """<root>
+            <p><a name="t2" id="t2"/></p>
+            <p> </p>
+            <p align="center"><img src="/img/revistas/cta/v30s1/33t02.gif"/></p>
+            <p> </p>
+            <p><font face="Verdana, Arial, Helvetica, sans-serif" size="2">Todas as alfaces analisadas apresentaram algum tipo de estrutura parasitária, semelhante aos resultados encontrados por Santana et al. (2006), onde também todas as amostras de alface analisadas, independente do sistema de cultivo, apresentaram presença de parasitas. Um dos fatores que pode ter contribuído para esse elevado índice foi a alta pluviosidade no período da coleta das amostras. A chuva, ao cair no solo, faz que partículas de terra acabem se alojando entre as folhas de alface, possibilitando a permanência de estruturas parasitárias. Erdogrul e Sener (2005) encontraram maiores taxas de contaminação nas alfaces coletadas nos períodos de chuva mais frequente. Contrariamente, Oliveira e Germano (1992) verificaram que nas épocas chuvosas, os percentuais de contaminação foram sensivelmente mais baixos.</font></p>
+        </root>"""
+        self.xml = etree.fromstring(text)
+
+    def test__find_table_wrap_content(self):
+        a_name_pipe = self.pipeline.ANamePipe(self.pipeline)
+        node = self.xml.find('.//p/a')
+        nodes = list(node.getparent().itersiblings())
+        table = a_name_pipe._find_table_wrap_content(nodes)
+        self.assertEqual(table.tag, "img")
+
+    def test__complete_table_wrap(self):
+        a_name_pipe = self.pipeline.ANamePipe(self.pipeline)
+        node = self.xml.find('.//p/a')
+        node.tag = "table-wrap"
+        a_name_pipe._complete_table_wrap(node)
+        self.assertIsNotNone(self.xml.find('.//table-wrap/img'))
+
+
+class Test_AName_Pipe_TableIsAhref(unittest.TestCase):
+
+    def setUp(self):
+        self.pipeline = HTML2SPSPipeline(pid="S0101-20612010000500033")
+        text = """<root>
+            <p><a name="t2" id="t2"/></p>
+            <p> </p>
+            <p align="center"><a href="/img/revistas/cta/v30s1/33t02.gif"/></p>
+            <p> </p>
+            <p><font face="Verdana, Arial, Helvetica, sans-serif" size="2">Todas as alfaces analisadas apresentaram algum tipo de estrutura parasitária, semelhante aos resultados encontrados por Santana et al. (2006), onde também todas as amostras de alface analisadas, independente do sistema de cultivo, apresentaram presença de parasitas. Um dos fatores que pode ter contribuído para esse elevado índice foi a alta pluviosidade no período da coleta das amostras. A chuva, ao cair no solo, faz que partículas de terra acabem se alojando entre as folhas de alface, possibilitando a permanência de estruturas parasitárias. Erdogrul e Sener (2005) encontraram maiores taxas de contaminação nas alfaces coletadas nos períodos de chuva mais frequente. Contrariamente, Oliveira e Germano (1992) verificaram que nas épocas chuvosas, os percentuais de contaminação foram sensivelmente mais baixos.</font></p>
+        </root>"""
+        self.xml = etree.fromstring(text)
+
+    def test__find_table_wrap_content(self):
+        a_name_pipe = self.pipeline.ANamePipe(self.pipeline)
+        node = self.xml.find('.//p/a')
+        nodes = list(node.getparent().itersiblings())
+        table = a_name_pipe._find_table_wrap_content(nodes)
+        self.assertEqual(table.tag, "a")
+
+    def test__complete_table_wrap(self):
+        a_name_pipe = self.pipeline.ANamePipe(self.pipeline)
+        node = self.xml.find('.//p/a')
+        node.tag = "table-wrap"
+        a_name_pipe._complete_table_wrap(node)
+        self.assertIsNotNone(self.xml.find('.//table-wrap/a[@href]'))
+
+
+class Test_AName_Pipe_TableIsTable(unittest.TestCase):
+
+    def setUp(self):
+        self.pipeline = HTML2SPSPipeline(pid="S0101-20612010000500033")
+        text = """<root>
+            <p><a name="t2" id="t2"/></p>
+            <p>Tabela 2 - Título da Tabela </p>
+            <p align="center"> <hr/> <table/> depois de table</p>
+            <p> </p>
+            <p><font face="Verdana, Arial, Helvetica, sans-serif" size="2">Todas as alfaces analisadas apresentaram algum tipo de estrutura parasitária, semelhante aos resultados encontrados por Santana et al. (2006), onde também todas as amostras de alface analisadas, independente do sistema de cultivo, apresentaram presença de parasitas. Um dos fatores que pode ter contribuído para esse elevado índice foi a alta pluviosidade no período da coleta das amostras. A chuva, ao cair no solo, faz que partículas de terra acabem se alojando entre as folhas de alface, possibilitando a permanência de estruturas parasitárias. Erdogrul e Sener (2005) encontraram maiores taxas de contaminação nas alfaces coletadas nos períodos de chuva mais frequente. Contrariamente, Oliveira e Germano (1992) verificaram que nas épocas chuvosas, os percentuais de contaminação foram sensivelmente mais baixos.</font></p>
+        </root>"""
+        expected = """<root>
+            <p><table-wrap id="t2">
+                <label>Tabela 2</label>
+                <caption><title>Título da Tabela</title></caption>
+                <table/> depois de table
+            </table-wrap></p>
+            <p> -  </p>
+            <p align="center"> <hr/> </p>
+            <p> </p>
+            <p><font face="Verdana, Arial, Helvetica, sans-serif" size="2">Todas as alfaces analisadas apresentaram algum tipo de estrutura parasitária, semelhante aos resultados encontrados por Santana et al. (2006), onde também todas as amostras de alface analisadas, independente do sistema de cultivo, apresentaram presença de parasitas. Um dos fatores que pode ter contribuído para esse elevado índice foi a alta pluviosidade no período da coleta das amostras. A chuva, ao cair no solo, faz que partículas de terra acabem se alojando entre as folhas de alface, possibilitando a permanência de estruturas parasitárias. Erdogrul e Sener (2005) encontraram maiores taxas de contaminação nas alfaces coletadas nos períodos de chuva mais frequente. Contrariamente, Oliveira e Germano (1992) verificaram que nas épocas chuvosas, os percentuais de contaminação foram sensivelmente mais baixos.</font></p>
+        </root>"""
+        self.xml = etree.fromstring(text)
+
+    def test__find_table_wrap_content(self):
+        a_name_pipe = self.pipeline.ANamePipe(self.pipeline)
+        node = self.xml.find('.//p/a')
+        nodes = list(node.getparent().itersiblings())
+        table = a_name_pipe._find_table_wrap_content(nodes)
+        self.assertEqual(table.tag, "table")
+
+    def test__complete_table_wrap(self):
+        a_name_pipe = self.pipeline.ANamePipe(self.pipeline)
+        node = self.xml.find('.//p/a')
+        node.tag = "table-wrap"
+        a_name_pipe._complete_table_wrap(node)
+        table = self.xml.find('.//table-wrap/table')
+        self.assertIsNotNone(table)
+        self.assertIsNotNone(
+            self.xml.findtext('.//table-wrap/label'), 'Tabela 2')
+        self.assertIsNotNone(
+            self.xml.findtext('.//table-wrap/caption/title'),
+            'Título da Tabela')
+        self.assertEqual(table.tail, " depois de table")
+        node_p = self.xml.findall('.//p')
+        self.assertEqual(node_p[1].text, '')
+        self.assertEqual(
+            etree.tostring(node_p[2]),
+            b'<p align="center"> <hr/> </p>\n            ')
