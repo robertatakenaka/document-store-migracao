@@ -476,22 +476,13 @@ class TestHTML2SPSPipeline(unittest.TestCase):
             "). Correspondence should be addressed to Dr Yip at this address.",
         )
 
-    def test_pipe_a_anchor(self):
-        node = self.etreeXML.find(".//font[@size='1']")
-        data = self.etreeXML, node
-        self.pipeline.APipe(super_obj=self.pipeline).transform(data)
-
-        text = etree.tostring(node).strip()
-        new_xml = etree.fromstring(text)
-
-        self.assertIsNotNone(new_xml.find("xref"))
-
     def test_pipe_aname__removes_navigation_to_note_go_and_back(self):
-        text = """<root><a href="#tx01">
-            <graphic xmlns:ns2="http://www.w3.org/1999/xlink" ns2:href="/img/revistas/gs/v29n2/seta.gif"/>
+        text = """<root><a href="#tx01"><graphic xmlns:ns2="http://www.w3.org/1999/xlink"
+            ns2:href="/img/revistas/gs/v29n2/seta.gif"/>
         </a><a name="tx01" id="tx01"/></root>"""
 
-        raw, transformed = self._transform(text, self.pipeline.CreateElementsFromANamePipe(self.pipeline))
+        raw, transformed = self._transform(
+            text, self.pipeline.CreateElementsFromANamePipe(self.pipeline))
 
         node = transformed.find(".//xref")
         self.assertIsNone(node)
@@ -499,29 +490,13 @@ class TestHTML2SPSPipeline(unittest.TestCase):
         node = transformed.find(".//a")
         self.assertIsNone(node)
 
-        self.assertIsNotNone(new_xml.find("xref"))
-
-    def test_pipe_aname__removes_navigation_to_note_go_and_back(self):
-        text = """<root><a href="#tx01">
-            <graphic xmlns:ns2="http://www.w3.org/1999/xlink" ns2:href="/img/revistas/gs/v29n2/seta.gif"/>
-        </a><a name="tx01" id="tx01"/></root>"""
-
-        raw, transformed = self._transform(text, self.pipeline.CreateElementsFromANamePipe(self.pipeline))
-
-        node = transformed.find(".//xref")
-        self.assertIsNone(node)
-
-        node = transformed.find(".//a")
-        self.assertIsNone(node)
-
-        node = transformed.find(".//graphic")
-        self.assertIsNotNone(node)
-        self.assertIsNotNone(node)
+        self.assertIsNone(transformed.find(".//graphic"))
 
     def test_pipe_aname__removes_navigation_to_note_go_and_back_case2(self):
-        text = """<root><a name="not01" id="not01"></a>TEXTO NOTA</root>"""
+        text = """<root><a name="1not" id="1not"/>TEXTO NOTA</root>"""
 
-        raw, transformed = self._transform(text, self.pipeline.CreateElementsFromANamePipe(self.pipeline))
+        raw, transformed = self._transform(
+            text, self.pipeline.CreateElementsFromANamePipe(self.pipeline))
 
         node_fn = transformed.find(".//fn[p]")
         self.assertIsNotNone(node_fn)
@@ -533,9 +508,8 @@ class TestHTML2SPSPipeline(unittest.TestCase):
         self.assertEqual(node_p.text, "TEXTO NOTA")
 
     def test_pipe_a_anchor__remove_xref_with_graphic(self):
-        text = """<root><a href="#top">
-            <graphic xmlns:ns2="http://www.w3.org/1999/xlink" ns2:href="/img/revistas/gs/v29n2/seta.gif"/>
-        </a></root>"""
+        text = """<root><a href="#top"><graphic xmlns:ns2="http://www.w3.org/1999/xlink"
+            ns2:href="/img/revistas/gs/v29n2/seta.gif"/></a></root>"""
 
         raw, transformed = self._transform(
             text, self.pipeline.APipe(super_obj=self.pipeline)
@@ -550,7 +524,7 @@ class TestHTML2SPSPipeline(unittest.TestCase):
         self.assertEqual(etree.tostring(transformed), b"<root/>")
 
     def test_pipe_a_anchor__remove_xref(self):
-        text = """<root><a href="#topb">b</a> Demographic and Health Surveys. Available from: </root>"""
+        text = """<root>Demographic and Health Surveys. Available from: <a href="#fn1">b</a></root>"""
 
         raw, transformed = self._transform(
             text, self.pipeline.APipe(super_obj=self.pipeline)
@@ -558,20 +532,22 @@ class TestHTML2SPSPipeline(unittest.TestCase):
 
         self.assertEqual(
             etree.tostring(transformed),
-            b"<root>b Demographic and Health Surveys. Available from: </root>",
+            b"<root>Demographic and Health Surveys. Available from: b</root>",
         )
 
-    @unittest.skip("TODO")
     def test_pipe_a_anchor__keep_xref(self):
-        text = """<root><a href="#tab1">Tabela 1</a> Demographic and Health Surveys. Available from: </root>"""
+        text = """<root><table-wrap id="tab1" xref_id="tab1"/><a href="#tab1">Tabela 1</a> Demographic and Health Surveys. Available from: </root>"""
 
         raw, transformed = self._transform(
             text, self.pipeline.APipe(super_obj=self.pipeline)
         )
 
+        print('\n'*10)
+        print(etree.tostring(transformed))
+        print('\n'*10)
         self.assertEqual(
             etree.tostring(transformed),
-            b'<root><xref rid="t1">Tabela 1</xref> Demographic and Health Surveys. Available from: </root>',
+            b'<root><table-wrap id="tab1"/><xref rid="tab1" ref-type="table">Tabela 1</xref> Demographic and Health Surveys. Available from: </root>',
         )
 
     def test_pipe_a_anchor__xref_bibr_case1(self):
@@ -1146,7 +1122,8 @@ class Test__remove_element_or_comment(unittest.TestCase):
         self.assertEqual(etree.tostring(xml), expected)
 
     def test__remove_element_or_comment_xref(self):
-        text = """<root><xref href="#top"><graphic xmlns:ns2="http://www.w3.org/1999/xlink" ns2:href="/img/revistas/gs/v29n2/seta.gif"/></xref></root>"""
+        text = """<root><xref href="#corresp"><graphic xmlns:ns2="http://www.w3.org/1999/xlink"
+        ns2:href="/img/revistas/gs/v29n2/seta.gif"/></xref></root>"""
 
         xml = etree.fromstring(text)
         node = xml.find(".//xref")
@@ -1169,7 +1146,7 @@ class TestAddTempIdToTablePipe(unittest.TestCase):
         raw, transformed = self.pipeline.AddTempIdToTablePipe(
             super_obj=self.pipeline).transform(data)
         table = transformed.find('.//table')
-        self.assertEqual(table.attrib.get("asset_content_id"), "b1-1")
+        self.assertEqual(table.attrib.get("asset_content_id"), "b1")
         self.assertEqual(table.attrib.get("asset_content_label"), "Tab")
 
 
@@ -1195,12 +1172,14 @@ class TestAddTempIdToAssetFileElementsPipe(unittest.TestCase):
             <img align="x" src="a04t04.gif"/>
             <img align="x" src="a04f08.gif"/>
             <img align="x" src="a04f03a.gif"/>
+            <img align="x" src="en_a05eq02.gif"/>
+            <img align="x" src="en_a05tab02.gif"/>
         </root>"""
         expected_id = [
-            None, 'qdr04-1', 'c08-1', 't04-1', 'f08-1', 'f03a-1',
+            None, 'qdr04', 'c08', 't04', 'f08', 'f03a', 'eq02', 'tab02'
         ]
         expected_reftype = [
-            None, 'fig', 'fig', 'table', 'fig', 'fig',
+            None, 'fig', 'fig', 'table', 'fig', 'fig', 'disp-formula', 'table'
         ]
         text, xml = self._add_asset_content_id(text)
         for i, img in enumerate(xml.findall('.//img')):
@@ -1433,7 +1412,7 @@ class TestCreateAssetElementFromAhrefPipe(unittest.TestCase):
 
     def test_transform(self):
         text = """<root>
-            <p><a href="a04qdr04.gif"
+            <p><a href="en_a05tab02.gif"
                 asset_content_id="qdr04" asset_content_reftype="fig">Fig 1</a> tail 1</p>
             <p><a href="a04t04.gif"
                 asset_content_id="t04" asset_content_reftype="table">Table 1</a> tail 2</p>
@@ -1463,3 +1442,34 @@ class TestCreateAssetElementFromAhrefPipe(unittest.TestCase):
         self.assertEqual(children[0].text, 'Figura')
         self.assertEqual(children[1].tag, 'graphic')
         self.assertIsNone(xml.find(".//fig/a"))
+
+
+class TestAssetsPipeline():
+
+    def test_transform(self):
+        text = """<p>A firmeza e umidade do fruto foram influenciadas
+        apenas pelo fator tempo de armazenamento.
+        Estas variáveis apresentaram discreta tendência de redução ao longo
+        do armazenamento (<a href="#fig02a">Figura 2 A</a> e
+        <a href="#fig02b">B</a>).</font></p>
+        <p><a name="fig02a" id="fig02a"/></p> <p> </p> <p>
+        <img src="/img/revistas/rceres/v57n5/a03fig02a.jpg"/>
+        <a name="fig02b" id="fig02b"/>
+        <img src="/img/revistas/rceres/v57n5/a03fig02b.jpg"/></p> """
+
+        pipeline = AssetsPipeline(pid="S1234-56782018000100011")
+        raw, xml = pipeline.SetupPipe().transform(text)
+
+        #raw, xml = pipeline.CreateElementsFromANamePipe(pipeline).transform(
+        #    (raw, xml))
+        # raw, xml = pipeline.AssetsPipe(pipeline).transform(
+        #    (raw, xml))
+        # raw, xml = pipeline.APipe(pipeline).transform(
+        #    (raw, xml))
+        # raw, xml = pipeline.ImgPipe(pipeline).transform(
+        #    (raw, xml))
+
+
+"""
+<a name="end" id="end"/><a href="#enda"><img src="/img/revistas/aiss/v50n1/seta.jpg" border="0"/></a> <b>Address for correspondence: </b> <br/> Dinesh N. Gandhi <br/> Scientist 'D' &amp; Head, Department of Neurobehavioral Toxicology, National Institute of Occupational Health (ICMR) <br/> Meghaninagar, Ahmedabad <br/> 380 016, Gujarat, India <br/> E-mail: <a href="mailto:d_gandhi28@yahoo.co.in">d_gandhi28@yahoo.co.in</a></font></p> 
+"""
