@@ -481,8 +481,11 @@ class TestHTML2SPSPipeline(unittest.TestCase):
             ns2:href="/img/revistas/gs/v29n2/seta.gif"/>
         </a><a name="tx01" id="tx01"/></root>"""
 
-        raw, transformed = self._transform(
-            text, self.pipeline.CreateElementsFromANamePipe(self.pipeline))
+        raw, transformed = text, etree.fromstring(text)
+        raw, transformed = self.pipeline.AddInfoToElementAPipe(
+            self.pipeline).transform((raw, transformed))
+        raw, transformed = self.pipeline.CreateElementsFromElementAPipe(
+            self.pipeline).transform((raw, transformed))
 
         node = transformed.find(".//xref")
         self.assertIsNone(node)
@@ -495,8 +498,11 @@ class TestHTML2SPSPipeline(unittest.TestCase):
     def test_pipe_aname__removes_navigation_to_note_go_and_back_case2(self):
         text = """<root><a name="1not" id="1not"/>TEXTO NOTA</root>"""
 
-        raw, transformed = self._transform(
-            text, self.pipeline.CreateElementsFromANamePipe(self.pipeline))
+        raw, transformed = text, etree.fromstring(text)
+        raw, transformed = self.pipeline.AddInfoToElementAPipe(
+            self.pipeline).transform((raw, transformed))
+        raw, transformed = self.pipeline.CreateElementsFromElementAPipe(
+            self.pipeline).transform((raw, transformed))
 
         node_fn = transformed.find(".//fn[p]")
         self.assertIsNotNone(node_fn)
@@ -1135,7 +1141,7 @@ class Test__remove_element_or_comment(unittest.TestCase):
         )
 
 
-class TestAddTempIdToTablePipe(unittest.TestCase):
+class TestAddAssetInfoToTablePipe(unittest.TestCase):
     def setUp(self):
         self.pipeline = AssetsPipeline(pid="S1234-56782018000100011")
 
@@ -1143,37 +1149,37 @@ class TestAddTempIdToTablePipe(unittest.TestCase):
         text = """<root><table id="B1"><tr><td>Texto</td></tr></table></root>"""
         xml = etree.fromstring(text)
         data = text, xml
-        raw, transformed = self.pipeline.AddTempIdToTablePipe(
+        raw, transformed = self.pipeline.AddAssetInfoToTablePipe(
             super_obj=self.pipeline).transform(data)
         table = transformed.find('.//table')
-        self.assertEqual(table.attrib.get("asset_content_id"), "b1")
-        self.assertEqual(table.attrib.get("asset_content_label"), "Tab")
+        self.assertEqual(table.attrib.get("asset_new_id"), "b1")
+        self.assertEqual(table.attrib.get("asset_label"), "Tab")
 
 
-class TestAddTempIdToAssetFileElementsPipe(unittest.TestCase):
+class TestAddAssetInfoToImgAndLinkElementsPipe(unittest.TestCase):
     def setUp(self):
         self.pipeline = AssetsPipeline(pid="S1234-56782018000100011")
         self.html_pipeline = HTML2SPSPipeline(pid="S1234-56782018000100011")
 
-    def _add_asset_content_id(self, text):
+    def _add_asset_new_id(self, text):
         xml = etree.fromstring(text)
-        return self.pipeline.AddTempIdToAssetFileElementsPipe(
+        return self.pipeline.AddAssetInfoToImgAndLinkElementsPipe(
             self.pipeline).transform((text, xml))
 
-    def _remove_asset_content_id(self, data):
+    def _remove_asset_new_id(self, data):
         return self.html_pipeline.RemoveTempIdToAssetElementPipe(
             ).transform(data)
 
-    def test_add_and_remove_asset_content_id_to_img(self):
+    def test_add_and_remove_asset_new_id_to_img(self):
         text = """<root>
-            <img align="x" src="/x/a04qdr04.gif"/>
-            <img align="x" src="a04qdr04.gif"/>
-            <img align="x" src="a04c08.gif"/>
-            <img align="x" src="a04t04.gif"/>
-            <img align="x" src="a04f08.gif"/>
-            <img align="x" src="a04f03a.gif"/>
-            <img align="x" src="en_a05eq02.gif"/>
-            <img align="x" src="en_a05tab02.gif"/>
+            <img src="/x/a04qdr04.gif"/>
+            <img src="a04qdr04.gif"/>
+            <img src="a04c08.gif"/>
+            <img src="a04t04.gif"/>
+            <img src="a04f08.gif"/>
+            <img src="a04f03a.gif"/>
+            <img src="en_a05eq02.gif"/>
+            <img src="en_a05tab02.gif"/>
         </root>"""
         expected_id = [
             None, 'qdr04', 'c08', 't04', 'f08', 'f03a', 'eq02', 'tab02'
@@ -1181,36 +1187,42 @@ class TestAddTempIdToAssetFileElementsPipe(unittest.TestCase):
         expected_reftype = [
             None, 'fig', 'fig', 'table', 'fig', 'fig', 'disp-formula', 'table'
         ]
-        text, xml = self._add_asset_content_id(text)
+        expected_elem_name = [
+            None, 'fig', 'fig', 'table-wrap', 'fig', 'fig', 'disp-formula', 'table-wrap'
+        ]
+        expected_reftype = [
+            None, 'fig', 'fig', 'table', 'fig', 'fig', 'disp-formula', 'table'
+        ]
+        text, xml = self._add_asset_new_id(text)
         for i, img in enumerate(xml.findall('.//img')):
             with self.subTest(img.attrib.get('src')):
                 self.assertEqual(
-                    img.attrib.get('asset_content_id'),
+                    img.attrib.get('asset_new_id'),
                     expected_id[i]
                     )
                 self.assertEqual(
-                    img.attrib.get('asset_content_reftype'),
+                    img.attrib.get('asset_reftype'),
                     expected_reftype[i]
                     )
 
-        text, xml = self._remove_asset_content_id((text, xml))
+        text, xml = self._remove_asset_new_id((text, xml))
         for i, img in enumerate(xml.findall('.//img')):
             with self.subTest(img.attrib.get('src')):
                 self.assertEqual(
-                    img.attrib.get('asset_content_id'),
+                    img.attrib.get('asset_new_id'),
                     None
                     )
                 self.assertEqual(
-                    img.attrib.get('asset_content_reftype'),
+                    img.attrib.get('asset_reftype'),
                     None
                     )
 
 
-class TestCreateAssetElementFromImgOrTablePipe(unittest.TestCase):
+class TestCreateAssetElementsFromImgOrTableElementsPipe(unittest.TestCase):
     def setUp(self):
-        self.pipeline = AssetsPipeline(pid="S1234-56782018000100011")
-        self.pipe = self.pipeline.CreateAssetElementFromImgOrTablePipe(
-            self.pipeline)
+        pipeline = AssetsPipeline(pid="S1234-56782018000100011")
+        self.pipe = pipeline.CreateAssetElementsFromImgOrTableElementsPipe(
+            pipeline)
 
     def _transform(self, text):
         xml = etree.fromstring(text)
@@ -1219,8 +1231,9 @@ class TestCreateAssetElementFromImgOrTablePipe(unittest.TestCase):
     def test_transform__creates_fig(self):
         text = """<root>
             <p><img align="x" src="a04qdr04.gif"
-                asset_content_id="qdr04" asset_content_reftype="fig"
-                asset_content_label="Fig"/></p>
+                asset_new_id="qdr04" asset_reftype="fig"
+                asset_elem_name="fig"
+                asset_label="Fig"/></p>
         </root>"""
         text, xml = self._transform(text)
         self.assertIsNotNone(xml.findall('.//fig/img'))
@@ -1228,8 +1241,9 @@ class TestCreateAssetElementFromImgOrTablePipe(unittest.TestCase):
     def test_transform__creates_fig_with_label_and_caption(self):
         text = """<root>
             <p><img align="x" src="a04qdr04.gif"
-                asset_content_id="qdr04" asset_content_reftype="fig"
-                asset_content_label="Fig"/></p>
+                asset_new_id="qdr04" asset_reftype="fig"
+                asset_elem_name="fig"
+                asset_label="Fig"/></p>
             <p>Figura 1 - texto figura</p>
         </root>"""
         text, xml = self._transform(text)
@@ -1240,8 +1254,9 @@ class TestCreateAssetElementFromImgOrTablePipe(unittest.TestCase):
     def test_transform__creates_table_wrap(self):
         text = """<root>
             <p><img align="x" src="a04t04.gif"
-                asset_content_id="t04" asset_content_reftype="table"
-                asset_content_label="Tab"/></p>
+                asset_new_id="t04" asset_reftype="table"
+                asset_elem_name="table-wrap"
+                asset_label="Tab"/></p>
         </root>"""
         text, xml = self._transform(text)
         self.assertIsNotNone(xml.findall('.//table-wrap/img'))
@@ -1250,8 +1265,9 @@ class TestCreateAssetElementFromImgOrTablePipe(unittest.TestCase):
         text = """<root>
             <p>Tabela</p>
             <p><img align="x" src="a04t04.gif"
-                asset_content_id="t04" asset_content_reftype="table"
-                asset_content_label="Tab"/></p>
+                asset_new_id="t04" asset_reftype="table"
+                asset_elem_name="table-wrap"
+                asset_label="Tab"/></p>
         </root>"""
         text, xml = self._transform(text)
         self.assertIsNotNone(xml.findall('.//table-wrap/img'))
@@ -1262,8 +1278,9 @@ class TestCreateAssetElementFromImgOrTablePipe(unittest.TestCase):
         text = """<root>
             <p>Tabela</p>
             <p><table
-                asset_content_id="t04" asset_content_reftype="table"
-                asset_content_label="Tab"/></p>
+                asset_new_id="t04" asset_reftype="table"
+                asset_elem_name="table-wrap"
+                asset_label="Tab"/></p>
         </root>"""
         text, xml = self._transform(text)
         self.assertIsNotNone(xml.findall('.//table-wrap/table'))
@@ -1275,8 +1292,9 @@ class TestCreateAssetElementFromImgOrTablePipe(unittest.TestCase):
             <p><fig id="qdr04" xref_id="qdr04"></fig></p>
             <p>Quadro 1. Esta é descriçãp da Doc...</p>
             <p><img align="x" src="a04qdr04.gif"
-                asset_content_id="qdr04" asset_content_reftype="fig"
-                asset_content_label="Quadro"/></p>
+                asset_new_id="qdr04" asset_reftype="fig"
+                asset_elem_name="fig"
+                asset_label="Quadro"/></p>
         </root>"""
 
         text, xml = self._transform(text)
@@ -1296,8 +1314,9 @@ class TestCreateAssetElementFromImgOrTablePipe(unittest.TestCase):
             <p><table-wrap id="t04" xref_id="t04"></table-wrap></p>
             <p>Tabela 1. Esta é descriçãp da Doc...</p>
             <p><img align="x" src="a04t04.gif"
-                asset_content_id="t04" asset_content_reftype="fig"
-                asset_content_label="Tabela"/></p>
+                asset_new_id="t04" asset_reftype="table"
+                asset_elem_name="table-wrap"
+                asset_label="Tabela"/></p>
         </root>"""
 
         text, xml = self._transform(text)
@@ -1388,7 +1407,7 @@ class TestCreateAssetElementFromImgOrTablePipe(unittest.TestCase):
 
     def test__find_label_and_caption_around_node_for_img(self):
         text = """<root>
-            <p><img asset_content_label="Figura" asset_content_id="f1"/></p>
+            <p><img asset_label="Figura" asset_new_id="f1"/></p>
             <p><bold>Figura</bold> <bold>1</bold> - Legenda da figura</p>
         </root>"""
         xml = etree.fromstring(text)
@@ -1400,10 +1419,10 @@ class TestCreateAssetElementFromImgOrTablePipe(unittest.TestCase):
         self.assertEqual(caption.findtext('title'), '- Legenda da figura')
 
 
-class TestCreateAssetElementFromAhrefPipe(unittest.TestCase):
+class TestCreateAssetElementsFromLinkElementsPipe(unittest.TestCase):
     def setUp(self):
         self.pipeline = AssetsPipeline(pid="S1234-56782018000100011")
-        self.pipe = self.pipeline.CreateAssetElementFromAhrefPipe(
+        self.pipe = self.pipeline.CreateAssetElementsFromLinkElementsPipe(
             self.pipeline)
 
     def _transform(self, text):
@@ -1413,9 +1432,11 @@ class TestCreateAssetElementFromAhrefPipe(unittest.TestCase):
     def test_transform(self):
         text = """<root>
             <p><a href="en_a05tab02.gif"
-                asset_content_id="qdr04" asset_content_reftype="fig">Fig 1</a> tail 1</p>
+                asset_new_id="qdr04" asset_reftype="fig"
+                asset_elem_name="fig">Fig 1</a> tail 1</p>
             <p><a href="a04t04.gif"
-                asset_content_id="t04" asset_content_reftype="table">Table 1</a> tail 2</p>
+                asset_new_id="t04" asset_reftype="table"
+                asset_elem_name="table-wrap">Table 1</a> tail 2</p>
         </root>"""
         text, xml = self._transform(text)
         xref = xml.findall('.//xref')
@@ -1434,7 +1455,8 @@ class TestCreateAssetElementFromAhrefPipe(unittest.TestCase):
     def test_transform_fig_with_subtitle(self):
         text = """<root>
             <p><a align="x" href="a04qdr04.gif"
-                asset_content_id="qdr04" asset_content_reftype="fig">Figura</a></p>
+                asset_new_id="qdr04" asset_reftype="fig"
+                asset_elem_name="fig">Figura</a></p>
         </root>"""
         text, xml = self._transform(text)
         children = xml.find(".//fig").getchildren()
