@@ -212,7 +212,7 @@ class Inferer:
         return "fn", "fn"
 
     def tag_and_reftype_from_a_href_text(self, a_href_text):
-        if not a_href_text.strip():
+        if not (a_href_text or "").strip():
             return
         a_href_text = a_href_text.strip().lower()
 
@@ -1346,6 +1346,8 @@ class HTML2SPSPipeline(object):
             return data
 
     class DocumentPipe(CustomPipe):
+        inferer = Inferer()
+
         def _update(self, node, elem_name, ref_type, new_id, text=None):
             node.set("xml_tag", elem_name)
             node.set("xml_reftype", ref_type)
@@ -1353,121 +1355,120 @@ class HTML2SPSPipeline(object):
             if text:
                 node.set("xml_label", text)
 
-        def _add_id(self, inferer, nodes_without_id, _id, tag, reftype, text):
-            for node in nodes_without_id:
-                alt_id = None
-                if not _id:
-                    href = node.attrib.get("href")
-                    tag_reftype_id = inferer.tag_and_reftype_and_id_from_filepath(
-                        href, tag
-                    )
-                    if tag_reftype_id:
-                        alt_elem_name, alt_reftype, alt_id = tag_reftype_id
-                if _id or alt_id:
-                    new_id = gera_id(_id or alt_id, self.super_obj.index_body)
-                    self._update(node, tag, reftype, new_id, text)
-
-        def _complete_a_href_from_text(self, inferer, texts):
+        def _add_xml_attribs_to_a_href_from_text(self, texts):
             for text, data in texts.items():
                 nodes_with_id, nodes_without_id = data
-                
-                tag_reftype = inferer.tag_and_reftype_from_a_href_text(text)
-                if tag_reftype:
-                    tag, reftype = tag_reftype
-                    _id = None
-                    for node in nodes_with_id:
-                        _id = node.attrib.get("href")[1:]
-                        new_id = gera_id(_id, self.super_obj.index_body)
-                        self._update(node, tag, reftype, new_id, text)
-                    self._add_id(
-                        inferer, nodes_without_id, _id, tag, reftype, text)
-                else:
-                    if not text.isalnum():
-                        for node in nodes_with_id:
-                            _remove_element_or_comment(node)
+                tag_reftype = self.inferer.tag_and_reftype_from_a_href_text(text)
+                if not tag_reftype:
+                    continue
 
-        def _complete_a_href_from_file_paths(self, inferer, file_paths):
+                tag, reftype = tag_reftype
+                node_id = None
+                for node in nodes_with_id:
+                    node_id = node.attrib.get("href")[1:]
+                    new_id = gera_id(node_id, self.super_obj.index_body)
+                    self._update(node, tag, reftype, new_id, text)
+
+                for node in nodes_without_id:
+                    alt_id = None
+                    if not node_id:
+                        href = node.attrib.get("href")
+                        tag_reftype_id = self.inferer.tag_and_reftype_and_id_from_filepath(
+                            href, tag
+                        )
+                        if tag_reftype_id:
+                            alt_tag, alt_reftype, alt_id = tag_reftype_id
+                    if node_id or alt_id:
+                        new_id = gera_id(node_id or alt_id, self.super_obj.index_body)
+                        self._update(node, tag, reftype, new_id, text)
+
+        def _classify_nodes(self, nodes):
+            incomplete = []
+            complete = None
+            for node in nodes:
+                data = [
+                    node.attrib.get("xml_label"),
+                    node.attrib.get("xml_tag"),
+                    node.attrib.get("xml_reftype"),
+                    node.attrib.get("xml_id"),
+                ]
+                if all(data):
+                    complete = data
+                else:
+                    incomplete.append(node)
+            return complete, incomplete
+
+        def _add_xml_attribs_to_a_href_from_file_paths(self, file_paths):
             for path, nodes in file_paths.items():
                 new_id = None
-                missing = []
-                for node in nodes:
-                    if node.attrib.get("xml_id"):
-                        if new_id is None:
-                            elem_name = node.attrib.get("xml_tag")
-                            ref_type = node.attrib.get("xml_reftype")
-                            text = node.attrib.get("xml_label")
-                            new_id = node.attrib.get("xml_id")
-                    else:
-                        missing.append(node)
-                if len(missing) == 0:
-                    continue
-                if not new_id:
-                    tag_reftype_id = inferer.tag_and_reftype_and_id_from_filepath(path)
+                complete, incomplete = self._classify_nodes(nodes)
+                if complete:
+                    text, tag, reftype, new_id = complete
+                else:
+                    tag_reftype_id = self.inferer.tag_and_reftype_and_id_from_filepath(path)
                     if tag_reftype_id:
-                        elem_name, ref_type, _id = tag_reftype_id
+                        tag, reftype, _id = tag_reftype_id
                         new_id = gera_id(_id, self.super_obj.index_body)
                         text = ""
                 if new_id:
-                    for node in missing:
-                        self._update(node, elem_name, ref_type, new_id, text)
+                    for node in incomplete:
+                        self._update(node, tag, reftype, new_id, text)
 
-        def _complete_a_name(self, inferer, a_names):
+        def _add_xml_attribs_to_a_name(self, a_names):
             for name, a_name_and_hrefs in a_names.items():
                 a_name, a_hrefs = a_name_and_hrefs
-                new_id = None
-                missing = []
-                for node in a_hrefs:
-                    if node.attrib.get("xml_id"):
-                        if new_id is None:
-                            elem_name = node.attrib.get("xml_tag")
-                            ref_type = node.attrib.get("xml_reftype")
-                            text = node.attrib.get("xml_label")
-                            new_id = node.attrib.get("xml_id")
-                    else:
-                        missing.append(node)
-                if not new_id:
-                    tag_reftype = None
-                    if a_name.tail:
-                        tag_reftype = inferer.tag_and_reftype_from_a_href_text(
+                complete, incomplete = self._classify_nodes(a_hrefs)
+                if complete:
+                    text, tag, reftype, new_id = complete
+                else:
+                    tag_reftype = self.inferer.tag_and_reftype_from_a_href_text(
                             a_name.tail)
                     if not tag_reftype:
-                        tag_reftype = inferer.tag_and_reftype_from_name(name)
+                        tag_reftype = self.inferer.tag_and_reftype_from_name(
+                            name)
                     if tag_reftype:
-                        elem_name, ref_type = tag_reftype
+                        tag, reftype = tag_reftype
                         new_id = gera_id(name, self.super_obj.index_body)
                         text = ""
                 if new_id:
-                    self._update(a_name, elem_name, ref_type, new_id, text)
-                    for node in missing:
-                        self._update(node, elem_name, ref_type, new_id, text)
+                    self._update(a_name, tag, reftype, new_id, text)
+                    for node in incomplete:
+                        self._update(node, tag, reftype, new_id, text)
 
-        def _complete_img(self, inferer, images):
+        def _search_asset_node_related_to_img(self, new_id, img):
+            if new_id:
+                asset_node = (
+                    img
+                    .getroottree()
+                    .find(".//*[@xml_id='{}']".format(new_id))
+                )
+                if asset_node:
+                    return asset_node
+            found = search_asset_node_backwards(img, "xml_tag")
+            if found is not None and found.attrib.get("name"):
+                return found
+
+        def _add_xml_attribs_to_img(self, images):
             for path, images in images.items():
-                tag_reftype_id = inferer.tag_and_reftype_and_id_from_filepath(
+                found_asset_node_from_filepath = None
+                text, new_id, tag, reftype = None, None, None, None
+                tag_reftype_id = self.inferer.tag_and_reftype_and_id_from_filepath(
                     path)
+                print("\npath", path)
+                print("tag_reftype_id", tag_reftype_id)
                 if tag_reftype_id:
-                    text = None
-                    elem_name, ref_type, _id = tag_reftype_id
+                    tag, reftype, _id = tag_reftype_id
                     new_id = gera_id(_id, self.super_obj.index_body)
-                    asset = (
-                        images[0]
-                        .getroottree()
-                        .find(".//*[@xml_new_id='{}']".format(new_id))
-                    )
-                    if asset is not None:
-                        text = asset.attrib.get("xml_label")
-                    for node in images:
-                        elem = asset
-                        if elem is None:
-                            elem = search_asset_node_backwards(node, "xml_tag")
-                            if elem is not None:
-                                # and elem.attrib.get("xml_tag") == elem_name
-                                text = elem.attrib.get("xml_label")
-                                new_id = elem.attrib.get("xml_id")
-                                elem_name = elem.attrib.get("xml_tag")
-                                ref_type = elem.attrib.get("xml_reftype")
-                        if all([elem_name, ref_type, new_id]):
-                            self._update(node, elem_name, ref_type, new_id, text)
+                    
+                for img in images:
+                    found = self._search_asset_node_related_to_img(new_id, img)
+                    if found is not None:
+                        text = found.attrib.get("xml_label")
+                        new_id = found.attrib.get("xml_id")
+                        tag = found.attrib.get("xml_tag")
+                        reftype = found.attrib.get("xml_reftype")
+                    if all([tag, reftype, new_id]):
+                        self._update(img, tag, reftype, new_id, text)
 
         def transform(self, data):
             raw, xml = data
@@ -1484,14 +1485,10 @@ class HTML2SPSPipeline(object):
                 fp.write("\n".join(names.keys()))
             with open(TEMP_A_HREF_TEXTS, "a+") as fp:
                 fp.write("\n".join(texts.keys()))
-            self._complete_a_name(self.super_obj.document.inferer, names)
-            self._complete_a_href_from_text(
-                self.super_obj.document.inferer, texts)
-
-            self._complete_a_href_from_file_paths(
-                self.super_obj.document.inferer, file_paths
-            )
-            self._complete_img(self.super_obj.document.inferer, images)
+            self._add_xml_attribs_to_a_href_from_text(texts)
+            self._add_xml_attribs_to_a_name(names)
+            self._add_xml_attribs_to_a_href_from_file_paths(file_paths)
+            self._add_xml_attribs_to_img(images)
             return data
 
     class RemoveImgSetaPipe(plumber.Pipe):
@@ -1795,9 +1792,9 @@ class AssetsPipeline(object):
                     _node.getparent().remove(_node)
                 return label, caption
 
-        def _get_asset_node(self, img_or_table, xml_new_tag, xml_new_id):
+        def _get_asset_node(self, img_or_table, xml_new_tag, xml_id):
             asset = find_or_create_asset_node(
-                img_or_table.getroottree(), xml_new_tag, xml_new_id, img_or_table
+                img_or_table.getroottree(), xml_new_tag, xml_id, img_or_table
             )
             if asset is not None:
                 if asset.getparent() is None:
@@ -1805,15 +1802,15 @@ class AssetsPipeline(object):
             return asset
 
         def parser_node(self, img_or_table):
-            xml_new_id = img_or_table.attrib.get("xml_id")
+            xml_id = img_or_table.attrib.get("xml_id")
             xml_reftype = img_or_table.attrib.get("xml_reftype")
             xml_new_tag = img_or_table.attrib.get("xml_tag")
             xml_label = img_or_table.attrib.get("xml_label")
-            if not xml_new_tag or not xml_new_id:
+            if not xml_new_tag or not xml_id:
                 return
             img_or_table_parent = img_or_table.getparent()
             label_and_caption = self._find_label_and_caption_around_node(img_or_table)
-            asset = self._get_asset_node(img_or_table, xml_new_tag, xml_new_id)
+            asset = self._get_asset_node(img_or_table, xml_new_tag, xml_id)
             if label_and_caption:
                 if label_and_caption[1] is not None:
                     asset.insert(0, label_and_caption[1])
@@ -1828,8 +1825,8 @@ class AssetsPipeline(object):
 
         def transform(self, data):
             raw, xml = data
-            _process(xml, "img[@xml_new_id]", self.parser_node)
-            _process(xml, "table[@xml_new_id]", self.parser_node)
+            _process(xml, "img[@xml_id]", self.parser_node)
+            _process(xml, "table[@xml_id]", self.parser_node)
             return data
 
 
