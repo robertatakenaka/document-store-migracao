@@ -42,6 +42,23 @@ class TestDocumentPipe(unittest.TestCase):
         self.pipe = pipeline.DocumentPipe(pipeline)
         self.inferer = Inferer()
 
+    def test_complete_a_name(self):
+        text = """
+        <root>
+            <a name="tab01"/>
+        </root>
+        """
+        xml = etree.fromstring(text)
+        nodes = xml.findall(".//a")
+
+        document = Document(xml)
+
+        self.pipe._complete_a_name(self.inferer, document.a_names)
+        self.assertIsNone(nodes[0].attrib.get("xml_label"))
+        self.assertEqual(nodes[0].attrib.get("xml_id"), "tab01")
+        self.assertEqual(nodes[0].attrib.get("xml_tag"), "table-wrap")
+        self.assertEqual(nodes[0].attrib.get("xml_reftype"), "table")
+
     def test_complete_a_href_from_text_changes_second_a_href(self):
         text = """
         <root>
@@ -60,9 +77,31 @@ class TestDocumentPipe(unittest.TestCase):
         self.assertEqual(
             etree.tostring(nodes[0]).strip(), b'<a href="a05t1"/>')
         self.assertEqual(nodes[1].attrib.get("xml_label"), "tabela 1")
-        self.assertEqual(nodes[1].attrib.get("xml_new_id"), "tab01")
-        self.assertEqual(nodes[1].attrib.get("xml_new_tag"), "table-wrap")
+        self.assertEqual(nodes[1].attrib.get("xml_id"), "tab01")
+        self.assertEqual(nodes[1].attrib.get("xml_tag"), "table-wrap")
         self.assertEqual(nodes[1].attrib.get("xml_reftype"), "table")
+
+    def test_complete_a_href_from_text_of_a_figure(self):
+        text = """
+        <root>
+            <a href="a05f1">1</a>
+            <a href="#f01">Figure 1</a>
+        </root>
+        """
+        xml = etree.fromstring(text)
+        nodes = xml.findall(".//a")
+
+        document = Document(xml)
+
+        items, file_paths = document.a_href_items
+        self.pipe._complete_a_href_from_text(self.inferer, items)
+
+        self.assertEqual(
+            etree.tostring(nodes[0]).strip(), b'<a href="a05f1">1</a>')
+        self.assertEqual(nodes[1].attrib.get("xml_label"), "figure 1")
+        self.assertEqual(nodes[1].attrib.get("xml_id"), "f01")
+        self.assertEqual(nodes[1].attrib.get("xml_tag"), "fig")
+        self.assertEqual(nodes[1].attrib.get("xml_reftype"), "fig")
 
     def test_complete_a_href_from_file_paths(self):
         text = """
@@ -79,25 +118,8 @@ class TestDocumentPipe(unittest.TestCase):
         items, file_paths = document.a_href_items
         self.pipe._complete_a_href_from_file_paths(self.inferer, file_paths)
         self.assertIsNone(nodes[0].attrib.get("xml_label"))
-        self.assertEqual(nodes[0].attrib.get("xml_new_id"), "t1")
-        self.assertEqual(nodes[0].attrib.get("xml_new_tag"), "table-wrap")
-        self.assertEqual(nodes[0].attrib.get("xml_reftype"), "table")
-
-    def test_complete_a_name(self):
-        text = """
-        <root>
-            <a name="tab01"/>
-        </root>
-        """
-        xml = etree.fromstring(text)
-        nodes = xml.findall(".//a")
-
-        document = Document(xml)
-
-        self.pipe._complete_a_name(self.inferer, document.a_names)
-        self.assertIsNone(nodes[0].attrib.get("xml_label"))
-        self.assertEqual(nodes[0].attrib.get("xml_new_id"), "tab01")
-        self.assertEqual(nodes[0].attrib.get("xml_new_tag"), "table-wrap")
+        self.assertEqual(nodes[0].attrib.get("xml_id"), "t1")
+        self.assertEqual(nodes[0].attrib.get("xml_tag"), "table-wrap")
         self.assertEqual(nodes[0].attrib.get("xml_reftype"), "table")
 
     def test_complete_img(self):
@@ -113,8 +135,8 @@ class TestDocumentPipe(unittest.TestCase):
 
         self.pipe._complete_img(self.inferer, document.images)
         self.assertIsNone(nodes[0].attrib.get("xml_label"))
-        self.assertEqual(nodes[0].attrib.get("xml_new_id"), "tab1")
-        self.assertEqual(nodes[0].attrib.get("xml_new_tag"), "table-wrap")
+        self.assertEqual(nodes[0].attrib.get("xml_id"), "tab1")
+        self.assertEqual(nodes[0].attrib.get("xml_tag"), "table-wrap")
         self.assertEqual(nodes[0].attrib.get("xml_reftype"), "table")
 
     def test_complete_all(self):
@@ -141,29 +163,29 @@ class TestDocumentPipe(unittest.TestCase):
             etree.tostring(nodes[0]).strip(),
             b'<a href="a05t1"/>')
         self.assertEqual(nodes[0].attrib.get("xml_label"), "tabela 1")
-        self.assertEqual(nodes[0].attrib.get("xml_new_id"), "tab01")
-        self.assertEqual(nodes[0].attrib.get("xml_new_tag"), "table-wrap")
+        self.assertEqual(nodes[0].attrib.get("xml_id"), "tab01")
+        self.assertEqual(nodes[0].attrib.get("xml_tag"), "table-wrap")
         self.assertEqual(nodes[0].attrib.get("xml_reftype"), "table")
 
         self.assertNotEqual(
             etree.tostring(nodes[1]).strip(), b'<a href="#tab01">Tabela 1</a>')
         self.assertEqual(nodes[1].attrib.get("xml_label"), "tabela 1")
-        self.assertEqual(nodes[1].attrib.get("xml_new_id"), "tab01")
-        self.assertEqual(nodes[1].attrib.get("xml_new_tag"), "table-wrap")
+        self.assertEqual(nodes[1].attrib.get("xml_id"), "tab01")
+        self.assertEqual(nodes[1].attrib.get("xml_tag"), "table-wrap")
         self.assertEqual(nodes[1].attrib.get("xml_reftype"), "table")
 
         self.assertNotEqual(
             etree.tostring(nodes[2]).strip(), b'<a name="tab01"/>')
         self.assertEqual(nodes[2].attrib.get("xml_label"), "tabela 1")
-        self.assertEqual(nodes[2].attrib.get("xml_new_id"), "tab01")
-        self.assertEqual(nodes[2].attrib.get("xml_new_tag"), "table-wrap")
+        self.assertEqual(nodes[2].attrib.get("xml_id"), "tab01")
+        self.assertEqual(nodes[2].attrib.get("xml_tag"), "table-wrap")
         self.assertEqual(nodes[2].attrib.get("xml_reftype"), "table")
 
         self.assertNotEqual(
             etree.tostring(nodes[3]).strip(), b'<img src="a05tab01"/>')
         self.assertEqual(nodes[3].attrib.get("xml_label"), "tabela 1")
-        self.assertEqual(nodes[3].attrib.get("xml_new_id"), "tab01")
-        self.assertEqual(nodes[3].attrib.get("xml_new_tag"), "table-wrap")
+        self.assertEqual(nodes[3].attrib.get("xml_id"), "tab01")
+        self.assertEqual(nodes[3].attrib.get("xml_tag"), "table-wrap")
         self.assertEqual(nodes[3].attrib.get("xml_reftype"), "table")
 
 
@@ -1418,7 +1440,7 @@ class TestAddAssetInfoToTablePipe(unittest.TestCase):
             super_obj=self.pipeline
         ).transform(data)
         table = transformed.find(".//table")
-        self.assertEqual(table.attrib.get("xml_new_id"), "b1")
+        self.assertEqual(table.attrib.get("xml_id"), "b1")
         self.assertEqual(table.attrib.get("xml_label"), "Tab")
 
 
@@ -1886,3 +1908,6 @@ class TestRemoveThumbImg(unittest.TestCase):
         self.assertEqual(
             etree.tostring(xml),
             expected)
+
+
+
