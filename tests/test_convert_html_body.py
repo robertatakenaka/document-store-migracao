@@ -1,7 +1,8 @@
+# code=utf-8
+
 import os
 import unittest
 from lxml import etree
-from copy import deepcopy
 
 from documentstore_migracao.utils.convert_html_body import (
     HTML2SPSPipeline,
@@ -16,14 +17,12 @@ from . import SAMPLES_PATH
 
 
 class TestConvertHMTLBodySearchAssetNodeBackwards(unittest.TestCase):
-
     def test_search_asset_node_backwards_returns_a_node(self):
         text = """<root>
             <p><table-wrap id="t01"></table-wrap></p>
             <p><current/></p></root>"""
         xmltree = etree.fromstring(text)
-        result = search_asset_node_backwards(
-            xmltree.find(".//current"))
+        result = search_asset_node_backwards(xmltree.find(".//current"))
         self.assertEqual(result.tag, "table-wrap")
 
     def test_search_asset_node_backwards_returns_None(self):
@@ -31,13 +30,11 @@ class TestConvertHMTLBodySearchAssetNodeBackwards(unittest.TestCase):
             <p><table-wrap id="t01"><current/></table-wrap></p>
             <p><current/></p></root>"""
         xmltree = etree.fromstring(text)
-        result = search_asset_node_backwards(
-            xmltree.find(".//current"))
+        result = search_asset_node_backwards(xmltree.find(".//current"))
         self.assertIsNone(result)
 
 
 class TestDocumentPipe(unittest.TestCase):
-
     def setUp(self):
         pipeline = HTML2SPSPipeline("PID")
         self.pipe = pipeline.DocumentPipe(pipeline)
@@ -64,41 +61,33 @@ class TestDocumentPipe(unittest.TestCase):
         self.texts, self.files = self.document.a_href_items
 
     def test_identify_data(self):
-        
+
         nodes = self.xml.findall("./a")
         img = self.xml.findall(".//img")
         self.assertEqual(
-            self.document.a_names,
-            {"tab01": (nodes[2], [nodes[0], nodes[1]])}
-            )
+            self.document.a_names, {"tab01": (nodes[2], [nodes[0], nodes[1]])}
+        )
         self.assertEqual(
             self.texts,
-            {"tabela 1": ([nodes[0], nodes[1]], []),
-             "figure 1": ([], [nodes[3]]),
-             "2": ([], [nodes[4]]),
-             "figure 3": ([], [nodes[5]]),
-             "3": ([], [nodes[6]]),
-            }
-            )
+            {
+                "tabela 1": ([nodes[0], nodes[1]], []),
+                "figure 1": ([], [nodes[3]]),
+                "2": ([], [nodes[4]]),
+                "figure 3": ([], [nodes[5]]),
+                "3": ([], [nodes[6]]),
+            },
+        )
         self.assertEqual(
             self.files,
-            {"f01": [nodes[3]],
-             "f02": [nodes[4]],
-             "f03": [nodes[5], nodes[6]],
-            }
-            )
-        self.assertEqual(
-            self.document.images,
-            {"app": [img[1]], "tabela": [img[0]]}
-            )
+            {"f01": [nodes[3]], "f02": [nodes[4]], "f03": [nodes[5], nodes[6]]},
+        )
+        self.assertEqual(self.document.images, {"app": [img[1]], "tabela": [img[0]]})
 
     def _assert(self, expected, step, xpath=".//a"):
         expected_node = etree.fromstring(expected).findall(xpath)
         for i, node in enumerate(self.xml.findall(xpath)):
             with self.subTest(step + " " + str(i)):
-                self.assertEqual(
-                    etree.tostring(node),
-                    etree.tostring(expected_node[i]))
+                self.assertEqual(etree.tostring(node), etree.tostring(expected_node[i]))
 
     def test_add_xml_attribs(self):
         expected = """
@@ -300,7 +289,7 @@ class TestHTML2SPSPipeline(unittest.TestCase):
     def test_pipe_br(self):
         text = '<root><p align="x">bla<br/> continua outra linha</p><p baljlba="1"/><td><br/></td><sec><br/></sec></root>'
         raw, transformed = self._transform(text, self.pipeline.BRPipe())
-
+        print("?", etree.tostring(transformed))
         self.assertEqual(
             etree.tostring(transformed),
             b'<root><p align="x">bla</p><p> continua outra linha</p><p baljlba="1"/><td><break/></td><sec/></root>',
@@ -709,9 +698,9 @@ class TestHTML2SPSPipeline(unittest.TestCase):
         expected = b'<root><fn id="fn1"><label>*</label><p>texto</p></fn></root>'
         xml = etree.fromstring(text)
 
-        text, xml = self.pipeline.DocumentPipe(
-            super_obj=self.pipeline
-        ).transform((text, xml))
+        text, xml = self.pipeline.DocumentPipe(super_obj=self.pipeline).transform(
+            (text, xml)
+        )
         text, xml = self.pipeline.AnchorAndInternalLinkPipe(
             super_obj=self.pipeline
         ).transform((text, xml))
@@ -753,9 +742,9 @@ class TestHTML2SPSPipeline(unittest.TestCase):
 
         raw, transformed = text, etree.fromstring(text)
 
-        raw, transformed = self.pipeline.DocumentPipe(
-            self.pipeline
-        ).transform((raw, transformed))
+        raw, transformed = self.pipeline.DocumentPipe(self.pipeline).transform(
+            (raw, transformed)
+        )
         raw, transformed = self.pipeline.AnchorAndInternalLinkPipe(
             self.pipeline
         ).transform((raw, transformed))
@@ -1138,6 +1127,8 @@ class Test_RemovePWhichIsParentOfPPipe_Case1(unittest.TestCase):
 
         data = self.text, self.xml
         raw, transformed = self.pipe.transform(data)
+        print("?????", etree.tostring(transformed))
+
         self.assertEqual(len(transformed.findall(".//body//p")), 2)
         self.assertEqual(len(transformed.findall(".//body//*")), 2)
         self._compare_tags_and_texts(transformed, expected)
@@ -1229,9 +1220,9 @@ class Test_RemovePWhichIsParentOfPPipe_Case2(unittest.TestCase):
             <body>
             <p>texto 0</p>
             <p>paragrafo 1</p>
-            <p>texto 2</p>
+            texto 2
             <p>paragrafo 3</p>
-            <p>texto 4</p>
+            texto 4
             </body>
             </root>"""
         )
@@ -1415,22 +1406,20 @@ class TestRemoveElementOrComment(unittest.TestCase):
         xml = etree.fromstring(text)
         nodes = xml.findall(".//a")
         _remove_element_or_comment(nodes[1])
-        self.assertEqual(
-            etree.tostring(xml),
-            expected
-        )
+        self.assertEqual(etree.tostring(xml), expected)
 
 
 class TestAddAssetInfoToTablePipe(unittest.TestCase):
     def setUp(self):
-        self.pipeline = AssetsPipeline(pid="S1234-56782018000100011")
+        self.html_pl = HTML2SPSPipeline(pid="S1234-56782018000100011")
+        self.pipeline = AssetsPipeline(self.html_pl)
 
     def test_pipe_table(self):
         text = """<root><table id="B1"><tr><td>Texto</td></tr></table></root>"""
         xml = etree.fromstring(text)
         data = text, xml
         raw, transformed = self.pipeline.AddAssetInfoToTablePipe(
-            super_obj=self.pipeline
+            super_obj=self.html_pl
         ).transform(data)
         table = transformed.find(".//table")
         self.assertEqual(table.attrib.get("xml_id"), "b1")
@@ -1439,7 +1428,7 @@ class TestAddAssetInfoToTablePipe(unittest.TestCase):
 
 class TestCreateAssetElementsFromImgOrTableElementsPipe(unittest.TestCase):
     def setUp(self):
-        pipeline = AssetsPipeline(pid="S1234-56782018000100011")
+        pipeline = AssetsPipeline(HTML2SPSPipeline(pid="S1234-56782018000100011"))
         self.pipe = pipeline.CreateAssetElementsFromImgOrTableElementsPipe(pipeline)
 
     def _transform(self, text):
@@ -1634,9 +1623,10 @@ class TestCreateAssetElementsFromImgOrTableElementsPipe(unittest.TestCase):
 
 class TestCreateAssetElementsFromExternalLinkElementsPipe(unittest.TestCase):
     def setUp(self):
-        self.pipeline = AssetsPipeline(pid="S1234-56782018000100011")
+        html_pl = HTML2SPSPipeline(pid="S1234-56782018000100011")
+        self.pipeline = AssetsPipeline(html_pl)
         self.pipe = self.pipeline.CreateAssetElementsFromExternalLinkElementsPipe(
-            self.pipeline
+            html_pl
         )
 
     def _transform(self, text):
@@ -1693,7 +1683,7 @@ class TestAssetsPipeline(unittest.TestCase):
         raw = text
         xml = etree.fromstring(text)
         pl_html = HTML2SPSPipeline(pid="S1234-56782018000100011")
-        pl_asset = AssetsPipeline(pid="S1234-56782018000100011")
+        pl_asset = AssetsPipeline(pl_html)
 
         raw, xml = pl_html.DocumentPipe(pl_html).transform((raw, xml))
         print(etree.tostring(xml))
@@ -1704,14 +1694,13 @@ class TestAssetsPipeline(unittest.TestCase):
         self.assertEqual(len(xml.findall(".//xref[@ref-type='table']")), 2)
         self.assertIsNone(xml.find(".//table-wrap[@id]/img"))
 
-        raw, xml = pl_html.AssetsPipe(pl_asset).transform((raw, xml))
+        raw, xml = pl_html.AssetsPipe(pl_html).transform((raw, xml))
         self.assertIsNotNone(xml.find(".//table-wrap[@id]/img"))
         self.assertIsNotNone(xml.find(".//table-wrap[@id]/label"))
         self.assertIsNone(xml.find(".//table-wrap[@id]/caption"))
 
 
 class TestConversionToAnnex(unittest.TestCase):
-
     def test_convert_to_app(self):
         text = """<root>
         <a href="#anx01">Anexo 1</a>
@@ -1722,53 +1711,53 @@ class TestConversionToAnnex(unittest.TestCase):
 
         xml = etree.fromstring(text)
         htmlpl = HTML2SPSPipeline(pid="S1234-56782018000100011")
-        text, xml = htmlpl.DocumentPipe(
-            htmlpl).transform((text, xml))
+        text, xml = htmlpl.DocumentPipe(htmlpl).transform((text, xml))
         self.assertEqual(
             etree.tostring(xml),
-        b"""<root>
+            b"""<root>
         <a href="#anx01" xml_tag="app" xml_reftype="app" xml_id="anx01" xml_label="anexo 1">Anexo 1</a>
         <p><a name="anx01" id="anx01" xml_tag="app" xml_reftype="app" xml_id="anx01" xml_label="anexo 1"/></p>
         <p><img src="/img/revistas/trends/v33n3/a05tab01.jpg" xml_tag="app" xml_reftype="app" xml_id="anx01" xml_label="anexo 1"/></p>
-        </root>"""
+        </root>""",
         )
 
-        text, xml = htmlpl.AnchorAndInternalLinkPipe(
-            htmlpl).transform((text, xml))
+        text, xml = htmlpl.AnchorAndInternalLinkPipe(htmlpl).transform((text, xml))
         self.assertEqual(
             etree.tostring(xml),
-        b"""<root>
+            b"""<root>
         <xref ref-type="app" rid="anx01">Anexo 1</xref>
         <p><app id="anx01"/></p>
         <p><img src="/img/revistas/trends/v33n3/a05tab01.jpg" xml_tag="app" xml_reftype="app" xml_id="anx01" xml_label="anexo 1"/></p>
-        </root>"""
+        </root>""",
         )
-        assetpl = AssetsPipeline(pid="S1234-56782018000100011")
+        assetpl = AssetsPipeline(htmlpl)
         text, xml = assetpl.CreateAssetElementsFromExternalLinkElementsPipe(
-            assetpl).transform((text, xml))
+            htmlpl
+        ).transform((text, xml))
         self.assertEqual(
             etree.tostring(xml),
-        b"""<root>
+            b"""<root>
         <xref ref-type="app" rid="anx01">Anexo 1</xref>
         <p><app id="anx01"/></p>
         <p><img src="/img/revistas/trends/v33n3/a05tab01.jpg" xml_tag="app" xml_reftype="app" xml_id="anx01" xml_label="anexo 1"/></p>
-        </root>""")
+        </root>""",
+        )
 
         text, xml = assetpl.CreateAssetElementsFromImgOrTableElementsPipe(
-            assetpl).transform((text, xml))
+            htmlpl
+        ).transform((text, xml))
         self.assertEqual(
             etree.tostring(xml),
-        b"""<root>
+            b"""<root>
         <xref ref-type="app" rid="anx01">Anexo 1</xref>
         <p><app id="anx01"><img src="/img/revistas/trends/v33n3/a05tab01.jpg"/></app></p>
         <p/>
-        </root>"""
+        </root>""",
         )
         self.assertIsNotNone(xml.find(".//app/img"))
 
 
 class TestConversionToTableWrap(unittest.TestCase):
-
     def test_convert_to_table_wrap(self):
         text = """<root>
         <a href="#tab01">Table 1</a>
@@ -1780,18 +1769,17 @@ class TestConversionToTableWrap(unittest.TestCase):
 
         html_pl = HTML2SPSPipeline(pid="S1234-56782018000100011")
         text, xml = html_pl.DocumentPipe(html_pl).transform((text, xml))
-        text, xml = html_pl.AnchorAndInternalLinkPipe(
-            html_pl).transform((text, xml))
+        text, xml = html_pl.AnchorAndInternalLinkPipe(html_pl).transform((text, xml))
 
-        asset_pl = AssetsPipeline(pid="S1234-56782018000100011")
+        asset_pl = AssetsPipeline(html_pl)
         text, xml = asset_pl.CreateAssetElementsFromImgOrTableElementsPipe(
-            asset_pl).transform((text, xml))
+            asset_pl
+        ).transform((text, xml))
 
         self.assertIsNotNone(xml.find(".//table-wrap/img"))
 
 
 class TestConversionToCorresp(unittest.TestCase):
-
     def test_convert_to_corresp(self):
         text = """<root>
         <a name="home" id="home"/>
@@ -1806,32 +1794,30 @@ class TestConversionToCorresp(unittest.TestCase):
         *
         Corresponding author
         </root>"""
-        expected_after_anchor_and_internal_link_pipe =\
-            b"""<root><fn id="back" fn-type="corresp"><p>* Corresponding author</p></fn></root>"""
+        expected_after_anchor_and_internal_link_pipe = b"""<root><fn id="back" fn-type="corresp"><p>* Corresponding author</p></fn></root>"""
 
         xml = etree.fromstring(text)
         pl = HTML2SPSPipeline(pid="S1234-56782018000100011")
 
-        text, xml = pl.InternalLinkAsAsteriskPipe(
-            pl).transform((text, xml))
+        text, xml = pl.InternalLinkAsAsteriskPipe(pl).transform((text, xml))
         self.assertNotIn(b'<a href="#home">*</a>', etree.tostring(xml))
         self.assertEqual(
-            etree.tostring(xml), expected_after_internal_link_as_asterisk_pipe)
+            etree.tostring(xml), expected_after_internal_link_as_asterisk_pipe
+        )
 
         text, xml = pl.DocumentPipe(pl).transform((text, xml))
         self.assertIn(
             b'<a name="back" id="back" xml_tag="corresp" xml_reftype="corresp" xml_id="back"/>',
-            etree.tostring(xml)
-            )
+            etree.tostring(xml),
+        )
 
-        text, xml = pl.AnchorAndInternalLinkPipe(
-            pl).transform((text, xml))
+        text, xml = pl.AnchorAndInternalLinkPipe(pl).transform((text, xml))
         self.assertEqual(
-            etree.tostring(xml), expected_after_anchor_and_internal_link_pipe)
+            etree.tostring(xml), expected_after_anchor_and_internal_link_pipe
+        )
 
 
 class TestConversionToFig(unittest.TestCase):
-
     def test_convert_to_figure(self):
         text = """<root><p>Monthly AE rate ranged from 0.92 to 9.77/100
         patient-days, with a mean of 5.34 
@@ -1846,32 +1832,32 @@ class TestConversionToFig(unittest.TestCase):
 
         xml = etree.fromstring(text)
         pl = HTML2SPSPipeline(pid="S1234-56782018000100011")
-        
+
         text, xml = pl.FixElementAPipe(pl).transform((text, xml))
         text, xml = pl.DocumentPipe(pl).transform((text, xml))
         _xml = etree.tostring(xml)
 
         self.assertIn(
             b'<a href="#fig01en" xml_tag="fig" xml_reftype="fig" xml_id="fig01en" xml_label="figure 1">Figure 1</a>',
-            _xml
-            )
+            _xml,
+        )
         self.assertIn(
             b'<a name="fig01en" id="fig01en" xml_tag="fig" xml_reftype="fig" xml_id="fig01en" xml_label="figure 1"/>',
-            _xml
-            )
+            _xml,
+        )
         self.assertIn(
             b'<img src="/img/revistas/jped/v86n3/en_a05fig01.gif" xml_tag="fig" xml_reftype="fig" xml_id="fig01en" xml_label="figure 1"/>',
-            _xml
-            )
+            _xml,
+        )
         text, xml = pl.AnchorAndInternalLinkPipe(pl).transform((text, xml))
         _xml = etree.tostring(xml)
-        self.assertIn(
-            b'<xref ref-type="fig" rid="fig01en">Figure 1</xref>', _xml)
+        self.assertIn(b'<xref ref-type="fig" rid="fig01en">Figure 1</xref>', _xml)
         self.assertIn(b'<fig id="fig01en"/>', _xml)
 
         apl = AssetsPipeline(pl)
-        text, xml = apl.CreateAssetElementsFromImgOrTableElementsPipe(
-            apl).transform((text, xml))
+        text, xml = apl.CreateAssetElementsFromImgOrTableElementsPipe(apl).transform(
+            (text, xml)
+        )
         self.assertIsNotNone(xml.findall(".//fig/img"))
 
         text, xml = pl.ImgPipe(pl).transform((text, xml))
@@ -1879,28 +1865,45 @@ class TestConversionToFig(unittest.TestCase):
 
 
 class TestRemoveThumbImg(unittest.TestCase):
-
     def test_convert_to_figure(self):
-        text = \
-        """<root xmlns:xlink="http://www.w3.org/1999/xlink"><p><a href="/img/revistas/hoehnea/v37n3/a05img01.jpg"><img src="/img/revistas/hoehnea/v37n3/a05img01-thumb.jpg"/><br/> Clique para ampliar</a></p></root>"""
+        text = """<root xmlns:xlink="http://www.w3.org/1999/xlink"><p><a href="/img/revistas/hoehnea/v37n3/a05img01.jpg"><img src="/img/revistas/hoehnea/v37n3/a05img01-thumb.jpg"/><br/> Clique para ampliar</a></p></root>"""
 
-        expected = \
-        b"""<root xmlns:xlink="http://www.w3.org/1999/xlink"><p><graphic xlink:href="/img/revistas/hoehnea/v37n3/a05img01.jpg"></graphic></p></root>"""
+        expected = b"""<root xmlns:xlink="http://www.w3.org/1999/xlink"><p><graphic xlink:href="/img/revistas/hoehnea/v37n3/a05img01.jpg"></graphic></p></root>"""
 
         xml = etree.fromstring(text)
         pl = HTML2SPSPipeline(pid="S1234-56782018000100011")
-        apl = AssetsPipeline(pid="S1234-56782018000100011")
+        apl = AssetsPipeline(pl)
 
         text, xml = pl.RemoveThumbImgPipe().transform((text, xml))
         self.assertNotIn(
             b'<img src="/img/revistas/hoehnea/v37n3/a05img01-thumb.jpg"/>',
-            etree.tostring(xml))
-        text, xml = apl.CreateAssetElementsFromExternalLinkElementsPipe(pl).transform((text, xml))
+            etree.tostring(xml),
+        )
+        text, xml = apl.CreateAssetElementsFromExternalLinkElementsPipe(pl).transform(
+            (text, xml)
+        )
         text, xml = pl.ImgPipe(pl).transform((text, xml))
 
-        self.assertEqual(
-            etree.tostring(xml),
-            expected)
+        self.assertEqual(etree.tostring(xml), expected)
 
 
+class TestFixBodyChildrenPipe(unittest.TestCase):
+    def test_fix_body_children_pipe_inserts_bold_in_p(self):
+        text = """<root><body><bold>título</bold>texto fora do bold</body></root>"""
+        expected = (
+            """<root><body><p><bold>título</bold>texto fora do bold</p></body></root>"""
+        )
+        xml = etree.fromstring(text)
+        pl = HTML2SPSPipeline(pid="pid")
+        text, xml = pl.FixBodyChildrenPipe().transform((text, xml))
+        self.assertEqual(etree.tostring(xml, encoding="unicode"), expected)
 
+    def test_fix_body_children_pipe_inserts_text_in_p(self):
+        text = b"""<root><body><p>texto dentro de p</p> texto </body></root>"""
+        expected = (
+            b"""<root><body><p>texto dentro de p</p><p>texto</p>  </body></root>"""
+        )
+        xml = etree.fromstring(text)
+        pl = HTML2SPSPipeline(pid="pid")
+        text, xml = pl.FixBodyChildrenPipe().transform((text, xml))
+        self.assertEqual(etree.tostring(xml), expected)
