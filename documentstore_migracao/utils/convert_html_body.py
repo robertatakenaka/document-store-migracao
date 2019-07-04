@@ -1124,17 +1124,29 @@ class HTML2SPSPipeline(object):
 
         def _create_fn(self, node):
             texts = (node.tail or "").strip()
-            if texts and not texts[0].isalnum():
-                node.tail = ""
-                label = etree.Element("label")
-                label.text = texts[0]
-                texts = texts[1:].strip()
-                node.append(label)
-            p = etree.Element("p")
-            p.text = texts
-            node.tail = None
-            node.text = None
-            node.append(p)
+            _next = node.getnext()
+            if texts:
+                if not texts[0].isalnum():
+                    node.tail = ""
+                    label = etree.Element("label")
+                    label.text = texts[0]
+                    texts = texts[1:].strip()
+                    node.append(label)
+                p = etree.Element("p")
+                p.text = texts
+                node.tail = None
+                node.text = None
+                node.append(p)
+            elif _next is not None:
+                parent = node.getparent()
+                if _next.tag == "p":
+                    node.append(deepcopy(_next))
+                    parent.remove(_next)
+                else:
+                    p = etree.Element("p")
+                    p.append(deepcopy(_next))
+                    node.append(p)
+                    parent.remove(_next)            
 
         def _create_corresp(self, node):
             texts = join_texts((node.tail or "").strip().split())

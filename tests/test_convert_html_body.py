@@ -1907,3 +1907,47 @@ class TestFixBodyChildrenPipe(unittest.TestCase):
         pl = HTML2SPSPipeline(pid="pid")
         text, xml = pl.FixBodyChildrenPipe().transform((text, xml))
         self.assertEqual(etree.tostring(xml), expected)
+
+class TestFnGroup(unittest.TestCase):
+
+    def test_x(self):
+        text ="""<root><p><a href="#nt01">1</a></p>
+        <p>
+          <a name="nt01"/>
+           <i>Isso é conhecido pelos pesquisadores como
+           ''reversão à média''
+           ( mean reversion).</i>
+         </p></root>"""
+        expected ="""<root>
+            <p><xref rid="nt01" ref-type="fn">1</xref></p>
+            <fn id="nt01"><p>
+            <italic>Isso é conhecido pelos pesquisadores como
+            &amp;#x27;&amp;#x27;reversão à média&amp;#x27;&amp;#x27;
+            ( mean reversion).</italic></p></fn></root>"""
+        pipeline = HTML2SPSPipeline(pid="pid")
+        xml = etree.fromstring(text)
+        xml_expected = etree.fromstring(expected)
+        text = text.encode("utf-8")
+        t, xml = pipeline.IPipe().transform((text, xml))
+        self.assertIn(b"italic", etree.tostring(xml))
+
+        t, xml = pipeline.FixElementAPipe(pipeline).transform((text, xml))
+        self.assertIn(b'id="nt01"', etree.tostring(xml))
+
+        t, xml = pipeline.DocumentPipe(pipeline).transform((text, xml))
+        for a in xml.findall(".//a"):
+            with self.subTest(etree.tostring(a)):
+                self.assertEqual(a.attrib.get("xml_tag"), "fn")
+                self.assertEqual(a.attrib.get("xml_reftype"), "fn")
+                self.assertEqual(a.attrib.get("xml_id"), "nt01")
+
+        t, xml = pipeline.AnchorAndInternalLinkPipe(
+            pipeline).transform((text, xml))
+        xref = xml.find(".//xref")
+        fn = xml.find(".//fn")
+        self.assertEqual(xref.text, "1")
+        self.assertEqual(xref.attrib.get("ref-type"), "fn")
+        self.assertEqual(xref.attrib.get("rid"), "nt01")
+        self.assertEqual(fn.attrib.get("id"), "nt01")
+        self.assertIn("Isso", fn.find("p/italic").text)
+        print(etree.tostring(xml))
