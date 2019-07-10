@@ -1102,7 +1102,12 @@ class HTML2SPSPipeline(object):
             if href.startswith("#"):
                 texts = get_node_text(node)
                 if texts and texts[0] == "*":
-                    _remove_element_or_comment(node)
+                    previous = node.getprevious()
+                    if previous is not None and previous.tag == "a":
+                        root = node.getroottree()
+                        related = root.find(".//*[@name='{}']".format(href[1:]))
+                        _remove_element_or_comment(related)
+                        _remove_element_or_comment(node)
 
         def transform(self, data):
             raw, xml = data
@@ -1127,17 +1132,21 @@ class HTML2SPSPipeline(object):
             _next = node.getnext()
             if texts:
                 if not texts[0].isalnum():
-                    node.tail = ""
-                    label = etree.Element("label")
-                    label.text = texts[0]
-                    texts = texts[1:].strip()
-                    node.append(label)
-                p = etree.Element("p")
-                p.text = texts
-                node.tail = None
-                node.text = None
-                node.append(p)
-            elif _next is not None:
+                    root = node.getroottree()
+                    node_id = node.attrib.get("id")
+                    related_text = ""
+                    related = root.find(".//*[@href='#{}']".format(node_id))
+                    if related is None:
+                        related = root.find(".//*[@rid='{}']".format(node_id))
+                    if related is not None:
+                        related_text = related.text
+                    if texts.startswith(related_text):
+                        node.tail = ""
+                        label = etree.Element("label")
+                        label.text = related_text
+                        texts = texts[len(related_text):].strip()
+                        node.append(label)
+            if _next is not None:
                 parent = node.getparent()
                 if _next.tag == "p":
                     node.append(deepcopy(_next))
@@ -1146,7 +1155,7 @@ class HTML2SPSPipeline(object):
                     p = etree.Element("p")
                     p.append(deepcopy(_next))
                     node.append(p)
-                    parent.remove(_next)            
+                    parent.remove(_next)
 
         def _create_corresp(self, node):
             texts = join_texts((node.tail or "").strip().split())

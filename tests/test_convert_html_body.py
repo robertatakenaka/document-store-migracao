@@ -1951,3 +1951,44 @@ class TestFnGroup(unittest.TestCase):
         self.assertEqual(fn.attrib.get("id"), "nt01")
         self.assertIn("Isso", fn.find("p/italic").text)
         print(etree.tostring(xml))
+
+
+class TestFnConversion(unittest.TestCase):
+
+    def test_pipeline(self):
+        text = """<root>
+        <p><a name="nota02"></a>Em terceiro lugar, ... o de que a
+        teoria dos jogos não é imune "<i>curve fitting</i>"
+        <a href="#back002">**</a> (Snidal, 1985:33; Stein, 1999:223)...</p>
+         <p><a name="back002"></a><a href="#nota02">**</a> <i>Curve-fitting</i>
+         é um termo que provém da estatística e significa adaptar ou mudar
+         uma explicação teórica de acordo com os dados ou a linha da regressão.
+         Uma tradução literal seria "mudar a teoria que se usa para adaptá-la
+         aos dados". [N. do T.]</p>
+        </root>"""
+        xml = etree.fromstring(text)
+        pipeline = HTML2SPSPipeline(pid="pid")
+        text, xml = pipeline.SetupPipe(pipeline).transform(xml)
+        text, xml = pipeline.FixElementAPipe(pipeline).transform((text, xml))
+        self.assertEqual(
+            xml.find(".//a[@name='nota02']").attrib.get("id"), "nota02")
+        self.assertEqual(
+            xml.find(".//a[@name='back002']").attrib.get("id"), "back002")
+        text, xml = pipeline.InternalLinkAsAsteriskPipe(pipeline).transform((text, xml))
+        self.assertIsNone(xml.find(".//a[@href='#nota02']"))
+        self.assertIsNone(xml.find(".//a[@name='nota02']"))
+
+        text, xml = pipeline.DocumentPipe(pipeline).transform((text, xml))
+        a_nodes = xml.findall(".//a")
+        self.assertEqual(a_nodes[0].attrib["xml_tag"], "fn")
+        self.assertEqual(a_nodes[0].attrib["xml_reftype"], "fn")
+        self.assertEqual(a_nodes[0].attrib["xml_id"], "back002")
+        self.assertEqual(a_nodes[1].attrib["xml_tag"], "fn")
+        self.assertEqual(a_nodes[1].attrib["xml_reftype"], "fn")
+        self.assertEqual(a_nodes[1].attrib["xml_id"], "back002")
+        text, xml = pipeline.AnchorAndInternalLinkPipe(pipeline).transform((text, xml))
+        self.assertIsNotNone(xml.find(".//xref[@rid='back002']"))
+        self.assertIsNotNone(xml.find(".//fn[@id='back002']"))
+        self.assertEqual(xml.find(".//fn[@id='back002']/label").text, "**")
+        self.assertEqual(xml.find(".//fn[@id='back002']/p/i").text, "Curve-fitting")
+        self.assertIn('[N. do T.]', xml.find(".//fn[@id='back002']/p/i").tail)
