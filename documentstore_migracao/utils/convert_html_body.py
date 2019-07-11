@@ -153,6 +153,7 @@ class HTML2SPSPipeline(object):
             self.AssetsPipe(super_obj=self),
             self.APipe(super_obj=self),
             self.ImgPipe(super_obj=self),
+            self.FnContentPipe(),
             self.TdCleanPipe(),
             self.TableCleanPipe(),
             self.BlockquotePipe(),
@@ -315,29 +316,6 @@ class HTML2SPSPipeline(object):
             "trans-subtitle",
             "trans-title",
         ]
-
-        def ___transform(self, data):
-            raw, xml = data
-            nodes = xml.findall("*[br]")
-            for node in nodes:
-                if node.tag in self.ALLOWED_IN:
-                    for br in node.findall("br"):
-                        br.tag = "break"
-                elif node.tag == "p":
-                    for br in node.findall("br"):
-                        if br.tail:
-                            p = etree.Element("p")
-                            p.text = br.tail.strip()
-                            br.tail = br.tail.replace(p.text, "")
-                            br.addnext(p)
-            etree.strip_tags(xml, "br")
-            return data
-
-        def replace_CHANGE_BR_by_close_p_open_p(self, xml):
-            _xml = etree.tostring(xml)
-            _xml = _xml.replace(b"<CHANGE_BR/>", b"</p><p>")
-            return etree.fromstring(_xml)
-
         def transform(self, data):
             raw, xml = data
             changed = False
@@ -348,12 +326,10 @@ class HTML2SPSPipeline(object):
                         br.tag = "break"
                 elif node.tag == "p":
                     for br in node.findall("br"):
-                        br.tag = "CHANGE_BR"
+                        br.tag = "p"
+                        br.set("content-type", "break")
                         changed = True
-
             etree.strip_tags(xml, "br")
-            if changed:
-                return data[0], self.replace_CHANGE_BR_by_close_p_open_p(xml)
             return data
 
     class PPipe(plumber.Pipe):
@@ -1106,7 +1082,8 @@ class HTML2SPSPipeline(object):
                     if previous is not None and previous.tag == "a":
                         root = node.getroottree()
                         related = root.find(".//*[@name='{}']".format(href[1:]))
-                        _remove_element_or_comment(related)
+                        if related is not None:
+                            _remove_element_or_comment(related)
                         _remove_element_or_comment(node)
 
         def transform(self, data):
@@ -1134,19 +1111,25 @@ class HTML2SPSPipeline(object):
                 if not texts[0].isalnum():
                     root = node.getroottree()
                     node_id = node.attrib.get("id")
-                    related_text = ""
+                    related_text = texts[0]
                     related = root.find(".//*[@href='#{}']".format(node_id))
                     if related is None:
                         related = root.find(".//*[@rid='{}']".format(node_id))
                     if related is not None:
                         related_text = related.text
-                    if texts.startswith(related_text):
+                    if related_text and texts.startswith(related_text):
                         node.tail = ""
                         label = etree.Element("label")
                         label.text = related_text
                         texts = texts[len(related_text):].strip()
                         node.append(label)
-            if _next is not None:
+            if _next is None:
+                if texts:
+                    p = etree.Element("p")
+                    p.text = texts
+                    node.append(p)
+                    node.tail = None
+            else:
                 parent = node.getparent()
                 if _next.tag == "p":
                     node.append(deepcopy(_next))
@@ -1156,23 +1139,6 @@ class HTML2SPSPipeline(object):
                     p.append(deepcopy(_next))
                     node.append(p)
                     parent.remove(_next)
-
-        def _create_corresp(self, node):
-            texts = join_texts((node.tail or "").strip().split())
-            node.set("fn-type", "corresp")
-            node.tag = "fn"
-            label = etree.Element("label")
-            p = etree.Element("p")
-            if ":" in texts:
-                texts = texts.split(":")
-            else:
-                texts = "", texts
-            label.text = texts[0]
-            p.text = texts[1]
-            if label.text:
-                node.append(label)
-            node.append(p)
-            node.tail = None
 
         def _update_a_name(self, node, new_id, new_tag):
             _name = node.attrib.get("name")
@@ -1184,9 +1150,10 @@ class HTML2SPSPipeline(object):
             if new_tag == "fn":
                 self._create_fn(node)
             if new_tag == "corresp":
-                self._create_corresp(node)
-            else:
-                node.tag = new_tag
+                self._create_fn(node)
+                node.set("fn-type", "corresp")
+                new_tag = "fn"
+            node.tag = new_tag
 
         def _update_a_href_items(self, a_href_items, new_id, reftype):
             for ahref in a_href_items:
@@ -1211,12 +1178,56 @@ class HTML2SPSPipeline(object):
 
             return data
 
+    class FnContentPipe(plumber.Pipe):
+        """
+        """
+        def _remove_invalid_node(self, node, parent, _next):
+            if _next is not None and _next.tag == "xref" and get_node_text(node) == "":
+                _id = node.attrib.get("id")
+                if _id.startswith("fn") or _id.startswith("replace_by_reftype"):
+                    if _id.endswith("a"):
+                        parent.remove(node)
+                    else:
+                        parent.remove(_next)
+                    return True
+
+        def parser_node(self, node):
+            parent = node.getparent()
+            _next = node.getnext()
+            invalid_node = self._remove_invalid_node(node, parent, _next)
+            if not invalid_node:
+                p = node.find("p")
+                if p is None:
+                    p = etree.Element("p")
+                remove_items = []
+                p_children = []
+                if p.text is None or p.text.strip() == "":
+                    while _next is not None:
+                        if _next.tag != "p":
+                            remove_items.append(_next)
+                        else:
+                            break
+                        _next = _next.getnext()
+                    for item in remove_items:
+                        p.append(deepcopy(item))
+                        parent.remove(item)
+                if p.getparent() is None:
+                    node.append(p)
+
+        def transform(self, data):
+            raw, xml = data
+            for fn in xml.findall(".//fn"):
+                self.parser_node(fn)
+            return data
+
     class DocumentPipe(CustomPipe):
         inferer = Inferer()
 
         def _update(self, node, elem_name, ref_type, new_id, text=None):
             node.set("xml_tag", elem_name)
             node.set("xml_reftype", ref_type)
+            if new_id.startswith("replace_by_reftype") and ref_type:
+                new_id = new_id.replace("replace_by_reftype", ref_type)
             node.set("xml_id", new_id)
             if text:
                 node.set("xml_label", text)

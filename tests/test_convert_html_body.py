@@ -290,9 +290,10 @@ class TestHTML2SPSPipeline(unittest.TestCase):
         text = '<root><p align="x">bla<br/> continua outra linha</p><p baljlba="1"/><td><br/></td><sec><br/></sec></root>'
         raw, transformed = self._transform(text, self.pipeline.BRPipe())
         print("?", etree.tostring(transformed))
+        print(b'<root><p align="x">bla<p content-type="break"/> continua outra linha</p><p baljlba="1"/><td><break/></td><sec/></root>')
         self.assertEqual(
             etree.tostring(transformed),
-            b'<root><p align="x">bla</p><p> continua outra linha</p><p baljlba="1"/><td><break/></td><sec/></root>',
+            b'<root><p align="x">bla<p content-type="break"/> continua outra linha</p><p baljlba="1"/><td><break/></td><sec/></root>',
         )
 
     def test_pipe_p(self):
@@ -748,7 +749,7 @@ class TestHTML2SPSPipeline(unittest.TestCase):
         raw, transformed = self.pipeline.AnchorAndInternalLinkPipe(
             self.pipeline
         ).transform((raw, transformed))
-
+        print(etree.tostring(transformed))
         node_fn = transformed.find(".//fn[p]")
         self.assertIsNotNone(node_fn)
         self.assertIsNone(node_fn.tail)
@@ -1788,22 +1789,21 @@ class TestConversionToCorresp(unittest.TestCase):
         Corresponding author
         </root>
         """
-        expected_after_internal_link_as_asterisk_pipe = b"""<root>
-        <a name="home" id="home"/>
-        <a name="back" id="back"/>
+        expected_1 = b"""<root><a name="back" id="back"/>
         *
         Corresponding author
         </root>"""
-        expected_after_anchor_and_internal_link_pipe = b"""<root><fn id="back" fn-type="corresp"><p>* Corresponding author</p></fn></root>"""
+        expected_2 = b"""<root><fn id="back" fn-type="corresp"><p>* Corresponding author</p></fn></root>"""
 
         xml = etree.fromstring(text)
         pl = HTML2SPSPipeline(pid="S1234-56782018000100011")
 
         text, xml = pl.InternalLinkAsAsteriskPipe(pl).transform((text, xml))
-        self.assertNotIn(b'<a href="#home">*</a>', etree.tostring(xml))
+        _text = etree.tostring(xml)
+        self.assertNotIn(b'<a href="#home">*</a>', _text)
         self.assertEqual(
-            etree.tostring(xml), expected_after_internal_link_as_asterisk_pipe
-        )
+            [item.strip() for item in xml.find(".//a[@name='back']").tail.split()],
+            ["*", "Corresponding author"])
 
         text, xml = pl.DocumentPipe(pl).transform((text, xml))
         self.assertIn(
@@ -1812,9 +1812,7 @@ class TestConversionToCorresp(unittest.TestCase):
         )
 
         text, xml = pl.AnchorAndInternalLinkPipe(pl).transform((text, xml))
-        self.assertEqual(
-            etree.tostring(xml), expected_after_anchor_and_internal_link_pipe
-        )
+        self.assertEqual(etree.tostring(xml), expected_2)
 
 
 class TestConversionToFig(unittest.TestCase):
@@ -1953,7 +1951,7 @@ class TestFnGroup(unittest.TestCase):
         print(etree.tostring(xml))
 
 
-class TestFnConversion(unittest.TestCase):
+class TestFnContentConversion(unittest.TestCase):
 
     def test_pipeline(self):
         text = """<root>
@@ -1974,7 +1972,11 @@ class TestFnConversion(unittest.TestCase):
             xml.find(".//a[@name='nota02']").attrib.get("id"), "nota02")
         self.assertEqual(
             xml.find(".//a[@name='back002']").attrib.get("id"), "back002")
+
+        print("\nantes", etree.tostring(xml))
         text, xml = pipeline.InternalLinkAsAsteriskPipe(pipeline).transform((text, xml))
+        print("depois", etree.tostring(xml))
+
         self.assertIsNone(xml.find(".//a[@href='#nota02']"))
         self.assertIsNone(xml.find(".//a[@name='nota02']"))
 
@@ -1992,3 +1994,184 @@ class TestFnConversion(unittest.TestCase):
         self.assertEqual(xml.find(".//fn[@id='back002']/label").text, "**")
         self.assertEqual(xml.find(".//fn[@id='back002']/p/i").text, "Curve-fitting")
         self.assertIn('[N. do T.]', xml.find(".//fn[@id='back002']/p/i").tail)
+
+    def test_fn_corresp(self):
+        text = """<root>
+          <p><a href="#nt">Correspondence to</a></p>
+          <p><a name="nt"></a>
+          <a href="#tx">
+          <img src="/img/revistas/jcol/v31n3/seta.jpg"/></a>
+          <b>Correspondence to:</b>
+          <br/>
+          Maria Auxiliadora Prolungatti Cesar
+          <br/>
+          Serviço de Clínica Cirúrgica do Hospital Universitário de Taubaté
+          <br/>
+          Avenida Granadeiro Guimarães, 270
+          <br/>
+          CEP: 12100-000 – Taubaté (SP), Brazil.
+          <br/>
+          E mail:
+          <a href="mailto:prolungatti@uol.com.br">prolungatti@uol.com.br</a>
+          </p>
+        </root>"""
+        xml = etree.fromstring(text)
+        pipeline = HTML2SPSPipeline(pid="pid")
+        text, xml = pipeline.SetupPipe(pipeline).transform(xml)
+        text, xml = pipeline.FixElementAPipe(pipeline).transform((text, xml))
+        self.assertEqual(
+            xml.find(".//a[@name='nt']").attrib.get("id"), "nt")
+        text, xml = pipeline.DocumentPipe(pipeline).transform((text, xml))
+        a_nodes = xml.findall(".//a")
+        self.assertEqual(a_nodes[0].attrib["xml_tag"], "corresp")
+        self.assertEqual(a_nodes[0].attrib["xml_reftype"], "corresp")
+        self.assertEqual(a_nodes[0].attrib["xml_id"], "nt")
+        self.assertEqual(a_nodes[1].attrib["xml_tag"], "corresp")
+        self.assertEqual(a_nodes[1].attrib["xml_reftype"], "corresp")
+        self.assertEqual(a_nodes[1].attrib["xml_id"], "nt")
+        text, xml = pipeline.AnchorAndInternalLinkPipe(pipeline).transform((text, xml))
+        self.assertIsNotNone(xml.find(".//xref[@rid='nt']"))
+        self.assertIsNotNone(xml.find(".//fn[@id='nt']"))
+        text, xml = pipeline.AssetsPipe(pipeline).transform((text, xml))
+        text, xml = pipeline.APipe(pipeline).transform((text, xml))
+        text, xml = pipeline.ImgPipe(pipeline).transform((text, xml))
+
+    def test_fn__pipe(self):
+        text = """<root>
+        <p><xref ref-type="corresp" rid="nt">Correspondence to</xref></p>
+        <p><fn id="nt" fn-type="corresp"><p></p></fn>
+        <b>Correspondence to:</b>
+            <br/>
+            Maria Auxiliadora Prolungatti Cesar
+            <br/>
+            Servi&#231;o de Cl&#237;nica Cir&#250;rgica do Hospital Universit&#225;rio de Taubat&#233;
+            <br/>
+            Avenida Granadeiro Guimar&#227;es, 270
+            <br/>
+            CEP: 12100-000 &#8211; Taubat&#233; (SP), Brazil.
+            <br/>E mail: <email>prolungatti@uol.com.br</email></p>
+        </root>"""
+        expected = """<root>
+        <p><xref ref-type="corresp" rid="nt">Correspondence to</xref></p>
+        <p><fn id="nt" fn-type="corresp"><p>
+        <b>Correspondence to:</b>
+            <br/>
+            Maria Auxiliadora Prolungatti Cesar
+            <br/>
+            Servi&#231;o de Cl&#237;nica Cir&#250;rgica do Hospital Universit&#225;rio de Taubat&#233;
+            <br/>
+            Avenida Granadeiro Guimar&#227;es, 270
+            <br/>
+            CEP: 12100-000 &#8211; Taubat&#233; (SP), Brazil.
+            <br/>E mail: <email>prolungatti@uol.com.br</email></p></fn></p>
+        </root>
+        """
+        xml = etree.fromstring(text)
+        pipeline = HTML2SPSPipeline(pid="pid")
+        text, xml = pipeline.SetupPipe(pipeline).transform(xml)
+        text, xml = pipeline.FnContentPipe().transform((text, xml))
+        fn_ = etree.tostring(xml.find(".//fn/p"))
+        self.assertIn(b"Correspondence to:", fn_)
+        self.assertIn(b"Maria Auxiliadora Prolungatti Cesar", fn_)
+        self.assertIn(b"prolungatti@uol.com.br", fn_)
+
+    def test_fn__pipe_creates_p(self):
+        text = """<root>
+        <p><xref ref-type="corresp" rid="nt">Correspondence to</xref></p>
+        <p><fn id="nt" fn-type="corresp"></fn>
+        <b>Correspondence to:</b>
+            <br/>
+            Maria Auxiliadora Prolungatti Cesar
+            <br/>
+            Servi&#231;o de Cl&#237;nica Cir&#250;rgica do Hospital Universit&#225;rio de Taubat&#233;
+            <br/>
+            Avenida Granadeiro Guimar&#227;es, 270
+            <br/>
+            CEP: 12100-000 &#8211; Taubat&#233; (SP), Brazil.
+            <br/>E mail: <email>prolungatti@uol.com.br</email></p>
+        </root>"""
+        expected = """<root>
+        <p><xref ref-type="corresp" rid="nt">Correspondence to</xref></p>
+        <p><fn id="nt" fn-type="corresp"><p>
+        <b>Correspondence to:</b>
+            <br/>
+            Maria Auxiliadora Prolungatti Cesar
+            <br/>
+            Servi&#231;o de Cl&#237;nica Cir&#250;rgica do Hospital Universit&#225;rio de Taubat&#233;
+            <br/>
+            Avenida Granadeiro Guimar&#227;es, 270
+            <br/>
+            CEP: 12100-000 &#8211; Taubat&#233; (SP), Brazil.
+            <br/>E mail: <email>prolungatti@uol.com.br</email></p></fn></p>
+        </root>
+        """
+        xml = etree.fromstring(text)
+        pipeline = HTML2SPSPipeline(pid="pid")
+        text, xml = pipeline.SetupPipe(pipeline).transform(xml)
+        text, xml = pipeline.FnContentPipe().transform((text, xml))
+        fn_ = etree.tostring(xml.find(".//fn/p"))
+        self.assertIn(b"Correspondence to:", fn_)
+        self.assertIn(b"Maria Auxiliadora Prolungatti Cesar", fn_)
+        self.assertIn(b"prolungatti@uol.com.br", fn_)
+
+    def test_fn_content_pipe_removes_fn(self):
+        text = """<root>
+        <p><bold>Nota:</bold> Sendo uma companhia de capital aberto,
+        consideramos dividendos pagos até 6% deduzíveis do lucro tributável.
+        <fn id="fn1a"><p></p></fn>
+        <xref ref-type="fn" rid="fn1b"><sup>1</sup></xref>
+        </p>
+        <p><fn id="fn1b"><p></p></fn>
+        <xref ref-type="fn" rid="fn1a">1</xref> Artigo 9 do Decreto-lei no 157, de 20/2/1967.</p>
+        </root>"""
+        expected = """<root>
+        <p><bold>Nota:</bold> Sendo uma companhia de capital aberto,
+        consideramos dividendos pagos até 6% deduzíveis do lucro tributável.
+        <xref ref-type="fn" rid="fn1b"><sup>1</sup></xref>
+        </p>
+        <p><fn id="fn1b"><label>1</label><p>Artigo 9 do Decreto-lei no 157, de 20/2/1967.</fn></p>
+        </root>"""
+        xml = etree.fromstring(text)
+        pipeline = HTML2SPSPipeline(pid="pid")
+        text, xml = pipeline.SetupPipe(pipeline).transform(xml)
+        text, xml = pipeline.FnContentPipe().transform((text, xml))
+        fn_ = etree.tostring(xml.find(".//fn/p"))
+        print(etree.tostring(xml))
+        self.assertIn(b"Correspondence to:", fn_)
+        self.assertIn(b"Maria Auxiliadora Prolungatti Cesar", fn_content)
+        self.assertIn(b"prolungatti@uol.com.br", fn_content)
+
+    def test_fn__pipe_fixes_xref(self):
+        text = """<root>
+        <p>
+            <fn id="replace_by_reftype1a">
+                <p></p>
+                <graphic xmlns:xlink="http://www.w3.org/1999/xlink"  xlink:href="/img/revistas/rae/v11n3/a05img02.jpg"/>
+            </fn>
+        </p>
+        <p>
+            <fn id="replace_by_reftype1b"><p></p></fn>
+            <xref ref-type="fn" rid="replace_by_reftype1a">1</xref>
+            A ser tomado pelo SERPRO em 1971.
+        </p>
+        </root>"""
+        expected = """<root>
+        <p>
+        <fn id="replace_by_reftype1a">
+        <p></p>
+        <graphic xmlns:xlink="http://www.w3.org/1999/xlink"  xlink:href="/img/revistas/rae/v11n3/a05img02.jpg"/>
+        </fn>
+        </p>
+        <p>
+        <fn id="replace_by_reftype1b"><p></p></fn>
+        <xref ref-type="fn" rid="replace_by_reftype1a">1</xref>
+        A ser tomado pelo SERPRO em 1971.</p>
+        </root>"""
+        xml = etree.fromstring(text)
+        pipeline = HTML2SPSPipeline(pid="pid")
+        text, xml = pipeline.SetupPipe(pipeline).transform(xml)
+        text, xml = pipeline.FnContentPipe().transform((text, xml))
+        fn_content = etree.tostring(xml.find(".//fn/p"))
+        self.assertIn(b"Correspondence to:", fn_content)
+        self.assertIn(b"Maria Auxiliadora Prolungatti Cesar", fn_content)
+        self.assertIn(b"prolungatti@uol.com.br", fn_content)
