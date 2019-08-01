@@ -1082,8 +1082,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.SetupPipe(),
             self.RemoveThumbImgPipe(),
             self.AddNameAndIdToElementAPipe(super_obj=html_pipeline),
-            self.DeduceAndSuggestConversionPipe(super_obj=html_pipeline),
             self.RemoveAnchorAndLinksToTextPipe(),
+            self.DeduceAndSuggestConversionPipe(super_obj=html_pipeline),
             self.ApplySuggestedConversionPipe(super_obj=html_pipeline),
             self.AddAssetInfoToTablePipe(super_obj=html_pipeline),
             self.CreateAssetElementsFromExternalLinkElementsPipe(
@@ -1507,9 +1507,13 @@ class ConvertElementsWhichHaveIdPipeline(object):
         """
         def _identify_order(self, xml):
             items_by_id = {}
-            for a in xml.findall(".//a[@xml_tag]"):
-                if a.attrib.get("xml_tag") == "fn":
-                    _id = a.attrib.get("xml_id")
+            for a in xml.findall(".//a"):
+                _id = a.attrib.get("name")
+                if not _id:
+                    href = a.attrib.get("href")
+                    if href and href.startswith("#"):
+                        _id = href[1:]
+                if _id:
                     items_by_id[_id] = items_by_id.get(_id, [])
                     items_by_id[_id].append(a)
             return items_by_id
@@ -1713,14 +1717,19 @@ class ConvertElementsWhichHaveIdPipeline(object):
             _next = node.getnext()
             parent = node.getparent()
             items = []
+
             while _next is not None:
-                if (_next.tag == "fn" or
-                    _next.tag == "p" and _next.attrib.get("content-type") != "break"
-                    ):
+                if _next.tag == "fn":
+                    break
+                elif (_next.tag == "p" and
+                      bool(get_node_text(_next)) and
+                      _next.attrib.get("content-type") != "break"):
+                    if node.find("p") is None:
+                        items.append(_next)
                     break
                 else:
                     items.append(_next)
-                    _next = _next.getnext()
+                _next = _next.getnext()
             if len(items) > 0 or node.tail:
                 node.text = node.tail
                 for item in items:

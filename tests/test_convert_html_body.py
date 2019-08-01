@@ -641,8 +641,6 @@ class Test_RemovePWhichIsParentOfPPipe_Case1(unittest.TestCase):
 
         data = self.text, self.xml
         raw, transformed = self.pipe.transform(data)
-        print("?????", etree.tostring(transformed))
-
         self.assertEqual(len(transformed.findall(".//body//p")), 2)
         self.assertEqual(len(transformed.findall(".//body//*")), 2)
         self._compare_tags_and_texts(transformed, expected)
@@ -2177,12 +2175,12 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
            <p/> .
          </root>"""
         expected = """<root><fn id="nt01">**
-            <italic>Isso é conhecido pelos pesquisadores como</italic> .</fn>
-            <p/> .
+            <italic>Isso é conhecido pelos pesquisadores como</italic> .
+            <p/> .</fn>
         </root>"""
         expected_final = """<root><fn id="nt01"><label>**</label>
-            <p><italic>Isso é conhecido pelos pesquisadores como</italic> .</p></fn>
-            <p/> .
+            <p><italic>Isso é conhecido pelos pesquisadores como</italic> .</p>
+            <p/> .</fn>
         </root>"""
         xml = etree.fromstring(text)
         node = xml.find(".//fn")
@@ -2190,8 +2188,7 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertIn("**", node.text)
         self.assertIn("Isso", node.find("italic").text)
         self.assertIn(".", node.find("italic").tail)
-        self.assertIsNone(node.find("p"))
-        self.assertIsNotNone(node.getparent().find("p"))
+        self.assertIsNone(node.getparent().find("p"))
         text, xml = self.pipe.transform((text, xml))
         fn = xml.find(".//fn")
         self.assertEqual(fn.find("p/italic").text, "Isso é conhecido pelos pesquisadores como")
@@ -2343,3 +2340,108 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertEqual(
             xml.find(".//fn/p/email").text, "chrisg@vortex.ufrgs.br")
         self.assertIn("Corresponding author", xml.find(".//fn/p").text, "*")
+
+    def test_convert_top1_and_back(self):
+        text = """<root>
+             <a name="top1"></a>
+             <p>Que profissional queremos formar?
+             <a href="#back1"><sup>1</sup></a></p>
+             <p><b>Maria Teresa Castelo Branco</b></p>
+             <p>Professor a assistente do Departamento de Psicologia da
+             Universidade Federal do Paraná - UFPR;
+             doutora em educação na Universidade Federal de São Carlos - UFSCar
+             </p>
+             <p><a href="#back">Endereço para correspondência</a>
+             </p>
+             <p>
+             <a name="back"></a>
+             <a href="#top1">
+             <img src="/img/revistas/pcp/v18n3/seta.gif" border="0"/>
+             Endereço para correspondência</a>
+             <br/>
+             Maria Teresa Castelo Branco
+             <br/>
+             Rua Desembargador Motta, 3762, Aptº 401    <br/>
+             Bairro Mercês 80430-200 Curitiba/PR    <br/>
+             Tel.: (041)336-4810    <br/>
+             E-mail:
+             <a href="mailto:machado@ifnet.com.br">machado@ifnet.com.br</a></p>
+             <p><i><a name="back1"></a></i>
+             <a href="#top1">1</a>.
+             <i> Este texto foi apresentado em reunião pedagógica do
+             departamento    de Psicologia da UFPR, no ano de 1993,
+             com a finalidade de subsidiar discussões    sobre a reformulação
+             curricular do curso de psicologia.    <br/>   <a name="back2"></a>
+             </i></p>
+             </root>"""
+        expected = b"""<root><p>Que profissional queremos formar?
+        <xref ref-type="fn" rid="back1"><sup>1</sup></xref></p>
+        <p><bold>Maria Teresa Castelo Branco</bold></p>
+        <p>Professor a assistente do Departamento de Psicologia da
+        Universidade Federal do Paran&#225; - UFPR;
+        doutora em educa&#231;&#227;o na Universidade Federal de S&#227;o Carlos - UFSCar
+        </p>
+        <p><xref ref-type="corresp" rid="back">Endere&#231;o para correspond&#234;ncia</xref>
+        </p>
+        <p>
+        </p><fn id="back" fn-type="corresp"><p>
+        Endere&#231;o para correspond&#234;ncia
+        </p></fn><p>
+        Maria Teresa Castelo Branco
+        </p><p>
+        Rua Desembargador Motta, 3762, Apt&#186; 401    </p><p>
+        Bairro Merc&#234;s 80430-200 Curitiba/PR    </p><p>
+        Tel.: (041)336-4810    </p><p>
+        E-mail:
+        </p><email>machado@ifnet.com.br</email>
+        <p><fn id="back1"><label>1.</label>
+        <p><italic> Este texto foi apresentado em reuni&#227;o pedag&#243;gica do
+        departamento    de Psicologia da UFPR, no ano de 1993,
+        com a finalidade de subsidiar discuss&#245;es    sobre a reformula&#231;&#227;o
+        curricular do curso de psicologia.       <fn id="back2"/>
+        </italic></p></fn></p>
+        </root>
+        """
+        xml = etree.fromstring(text)
+        text, xml = self.html_pl.deploy(xml)
+        self.assertTrue(
+            xml.find(".//fn[1]/p").text.strip().startswith("Endere"))
+        self.assertTrue(
+            xml.find(".//fn[@id='back1']/label").text.startswith("1"))
+        self.assertTrue(
+            xml.find(
+                ".//fn/p/italic").text.strip().startswith("Este texto"))
+        self.assertTrue(
+            xml.find(".//xref[1]/sup").text.startswith("1"))
+        self.assertTrue(
+            xml.find(
+                ".//xref[@rid='back']").text.strip().startswith("Endere"))
+
+    def test_convert_fn_S0021_25712015000100005(self):
+        text = """<root>
+        <p><a name="nt" id="nt"></a>
+        <a href="#tx">
+        <img src="/img/revistas/aiss/v51n1/seta.jpg" border="0" /></a>
+        <bold>Address for correspondence:</bold>
+        <p content-type="break">   Sara Vezzoli,</p>
+        <p content-type="break">   Dipartimento di Specialità Medico-Chirurgiche,
+        Scienze Radiologiche e Sanità Pubblica, Università degli
+        Studi di Brescia,    </p>
+        <p content-type="break">   P.le Spedali Civili n. 1, 25123
+        Brescia, Italy.    </p><p content-type="break">
+        E-mail:
+        <a href="mailto:sara.vezzoli@unibs.it">sara.vezzoli@unibs.it</a>.
+        </p></p></root>"""
+        _xml = etree.fromstring(text)
+        text, xml = self.html_pl.ConvertElementsWhichHaveIdPipe(
+             self.html_pl).transform((text, _xml))
+        text, xml = self.html_pl.deploy(xml)
+        fn = xml.find(".//fn[@id='nt']")
+        p = fn.findall("p")
+        p = fn.findall(".//p")
+        self.assertEqual(
+            fn.find("label/bold").text, "Address for correspondence:")
+        self.assertEqual(p[0].text.strip(), "Sara Vezzoli,")
+        self.assertTrue(
+            p[1].text.strip().startswith("Dipartimento di Speciali"))
+        self.assertEqual(len(p), 4)
