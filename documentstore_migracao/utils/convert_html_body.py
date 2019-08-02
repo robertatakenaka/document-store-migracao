@@ -1868,8 +1868,18 @@ class ConvertElementsWhichHaveIdPipeline(object):
                         break
                 finished = moved is False
 
+        def reverse_sup_fn(self, xml):
+            for node in xml.findall(".//sup[fn]"):
+                fn = node.find("fn")
+                node_copy = deepcopy(fn)
+                node_copy.tail = ""
+                node.addprevious(node_copy)
+                _remove_element_or_comment(fn)
+
         def transform(self, data):
             raw, xml = data
+            self.reverse_sup_fn(xml)
+            self.sup_fn()
             self.move_fn_nodes(xml)
             for fn in xml.findall(".//fn"):
                 self.update(fn)

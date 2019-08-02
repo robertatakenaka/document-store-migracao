@@ -2545,3 +2545,10 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertTrue(
             p[1].text.strip().startswith("Dipartimento di Speciali"))
         self.assertEqual(len(p), 4)
+
+    def test_reverse_sup_fn(self):
+        text = """<root><sup><fn id="n4"/>****</sup></root>"""
+        expected = b"""<root><fn id="n4"/><sup>****</sup></root>"""
+        xml = etree.fromstring(text)
+        self.pipe.reverse_sup_fn(xml)
+        self.assertEqual(etree.tostring(xml), expected)
