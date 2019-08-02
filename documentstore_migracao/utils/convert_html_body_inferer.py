@@ -43,7 +43,6 @@ class Inferer:
         if "corresp" in a_href_text:
             return "corresp", "corresp"
 
-
     def tag_and_reftype_and_id_from_filepath(self, file_path, elem_name=None):
         filename, __ = files.extract_filename_ext_by_path(file_path)
 
