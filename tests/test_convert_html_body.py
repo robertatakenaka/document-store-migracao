@@ -2250,6 +2250,70 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertNotIn(
             "Este jardim esteve mais tarde", " ".join(node.itertext()))
 
+    def test_convert_nested_fn_to_fn_list(self):
+        text = """<root><p><fn id="back1"/>1. <italic> Este texto foi
+        apresentado em reuni&#227;o pedag&#243;gica do departamento
+        de Psicologia da UFPR, no ano de 1993, com a finalidade de subsidiar
+        discuss&#245;es sobre a reformula&#231;&#227;o curricular do curso de
+        psicologia. <fn id="back2"/></italic>2. <italic>Dados do N&#250;cleo
+        de Estudos do Brasil Contempor&#226;neo, do Centro de Estudos
+        Avan&#231;ados Multidisciplinares da UNB, In: Buarque, C. (1991).
+        O Colapso da Modernidade Brasileira, Paz e Terra, Rio de Janeiro.
+        <fn id="back3"/></italic>3. <italic>Conforme o que demonstra a
+        pesquisa In: Carvalho, C. V. &amp; Silva, L.C. da. (1990).
+        Atua&#231;&#227;o dos Psic&#243;logos na Sa&#250;de P&#250;blica.
+        Psicologia, Ci&#234;ncia e Profiss&#227;o, n&#176; 2, 3-4.
+        <fn id="back4"/></italic>4. <italic>Patto utiliza o termo de Sastre:
+        "ideologias que sendo regi&#245;es diferenciadas da ideologia
+        dominante, costumam ser reconhecidas socialmente como
+        ci&#234;ncias". Sastre, C. (1974). La Psicologia.
+        Buenos Aires.</italic></p></root>"""
+        expected = ""
+        xml = etree.fromstring(text)
+
+        fn = xml.findall(".//fn")
+        self.assertEqual(fn[0].getchildren(), [])
+        self.assertEqual(fn[1].getchildren(), [])
+        self.assertEqual(fn[2].getchildren(), [])
+        self.assertEqual(fn[3].getchildren(), [])
+
+        text, xml = self.pipe.transform((text, xml))
+
+        fn = xml.findall(".//fn")
+
+        self.assertEqual(fn[0].find("label").text, "1.")
+        self.assertTrue(
+            fn[0].find("p/italic").text.strip().startswith("Este texto foi"))
+        self.assertTrue(
+            fn[0].find("p/italic").text.strip().endswith("psicologia."))
+
+        self.assertEqual(fn[1].find("label").text, "2.")
+        self.assertTrue(
+            fn[1].find("p/italic").text.strip().startswith("Dados do N"))
+        self.assertTrue(
+            fn[1].find("p/italic").text.strip().endswith("Janeiro."))
+
+        self.assertEqual(fn[2].find("label").text, "3.")
+        self.assertTrue(
+            fn[2].find("p/italic").text.strip().startswith("Conforme o que"))
+        self.assertTrue(
+            fn[2].find("p/italic").text.strip().endswith("3-4."))
+
+        self.assertEqual(fn[3].find("label").text, "4.")
+        self.assertTrue(
+            fn[3].find("p/italic").text.strip().startswith("Patto utiliza o"))
+        self.assertTrue(
+            fn[3].find("p/italic").text.strip().endswith("Buenos Aires."))
+
+
+    def test__move_fn_moves_fn_out_of_x(self):
+        text = """<root><x><fn id="back1"/></x>1.</root>"""
+        expected = b"""<root><x/><fn id="back1"/>1.</root>"""
+        xml = etree.fromstring(text)
+        node = xml.find(".//fn")
+        self.pipe._move_fn(node)
+        self.assertEqual(etree.tostring(xml), expected)
+
     def test__create_p_for_complex_content__creates_p(self):
         text = """<root><fn id="nt01">
            <italic>Isso é conhecido pelos pesquisadores como</italic></fn>

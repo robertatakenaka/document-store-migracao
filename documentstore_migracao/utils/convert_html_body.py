@@ -1720,23 +1720,28 @@ class ConvertElementsWhichHaveIdPipeline(object):
                         _remove_element_or_comment(_next)
                     return True
 
+        def _found_end(self, _next):
+            return (
+                _next.tag == "fn" or
+                (_next.tag == "p" and
+                 not (_next.text or "").strip() and
+                _next.find(".//fn") is not None)
+            )
+
         def _move_fn_tail_into_fn(self, node):
             _next = node.getnext()
             parent = node.getparent()
             items = []
-
             while _next is not None:
-                if _next.tag == "fn":
-                    break
-                elif (_next.tag == "p" and
-                      not (_next.text or "").strip() and
-                      _next.find("fn") is not None):
+                if self._found_end(_next):
                     break
                 elif (_next.tag == "p" and
                       bool(get_node_text(_next)) and
                       _next.attrib.get("content-type") != "break"):
                     if node.find("p") is None:
                         items.append(_next)
+                    break
+                elif _next.find(".//fn") is not None:
                     break
                 else:
                     items.append(_next)
@@ -1825,13 +1830,48 @@ class ConvertElementsWhichHaveIdPipeline(object):
             if not invalid_node:
                 if not fn_text:
                     self._move_fn_tail_into_fn(node)
-
                 self._identify_label_and_p(node)
+
+        def _move_fn(self, fn):
+            conditions = (
+                not fn.text,
+                len(fn.getchildren()) == 0,
+                not (fn.tail or "").strip()
+            )
+            if all(conditions):
+                parent = fn.getparent()
+                if parent is not None and parent.tail:
+                    parent.addnext(deepcopy(fn))
+                    parent.remove(fn)
+                    return True
+
+        def _move_fn(self, fn):
+            conditions = (
+                not fn.text,
+                len(fn.getchildren()) == 0,
+                not (fn.tail or "").strip()
+            )
+            if all(conditions):
+                parent = fn.getparent()
+                if parent is not None and parent.tail:
+                    parent.addnext(deepcopy(fn))
+                    parent.remove(fn)
+                    return True
+
+        def move_fn_nodes(self, xml):
+            finished = False
+            while not finished:
+                moved = False
+                for fn in xml.findall(".//fn"):
+                    if self._move_fn(fn):
+                        moved = True
+                        break
+                finished = moved is False
 
         def transform(self, data):
             raw, xml = data
+            self.move_fn_nodes(xml)
             for fn in xml.findall(".//fn"):
-                fn.tail = (fn.tail or "").strip()
                 self.update(fn)
             return data
 
