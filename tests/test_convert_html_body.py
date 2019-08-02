@@ -1466,7 +1466,7 @@ class TestConvertElementsWhichHaveIdPipeline(unittest.TestCase):
 
     def test_fix_element_a(self):
         text = """<root><a name="_ftnref19" href="#_ftn2" id="_ftnref19"><sup>1</sup></a></root>"""
-        expected = b"""<root><a name="_ftnref19" id="_ftnref19"/><a href="#_ftn2"><sup>1</sup></a></root>"""
+        expected = b"""<root><a name="xftnref19" id="xftnref19"/><a href="#xftn2"><sup>1</sup></a></root>"""
         xml = etree.fromstring(text)
         text, xml = self.pl.AddNameAndIdToElementAPipe(self.html_pl).transform((text, xml))
         self.assertEqual(etree.tostring(xml), expected)
@@ -2222,6 +2222,34 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertEqual(fn.find(".//p[2]").text, "Email: a@x.org")
         self.assertEqual(fn.find("label").text, "**")
 
+    def test__move_fn_tail_into_fn_considering_next_is_p_fn(self):
+        text = """<root>
+        <fn id="n3"/>3. Para o surgimento dos jardins bot&#226;nicos no Brasil,
+         ver Segawa (1996). O passeio p&#250;blico do Rio de Janeiro foi
+         constru&#237;do entre 1779 e 1783, com fun&#231;&#245;es mais
+         urban&#237;sticas do que bot&#226;nicas. Cartas r&#233;gias
+         determinando a cria&#231;&#227;o de verdadeiros jardins bot&#226;nicos
+          foram enviadas para Bel&#233;m em 1796 e, dois anos depois,
+          para Olinda, Salvador, Vila Rica e S&#227;o Paulo.
+          Mas nenhum destes empreendimentos chegou a sair realmente do papel.
+          O importante Jardim Bot&#226;nico do Rio de Janeiro apenas foi
+          criado em 1808.
+        <p><fn id="n4"/> 4. Este jardim esteve mais tarde sob controle
+        portugu&#234;s, no per&#237;odo entre 1809 e 1817, quando Caiena
+        foi ocupada em repres&#225;lia &#224; invas&#227;o de Portugal pelas
+        tropas napole&#244;nicas. A partir dele transferiu-se para o Brasil
+        uma quantidade razo&#225;vel de material bot&#226;nico, inclusive a
+        variedade de cana que, devido a sua origem, ficou conhecida como
+        "caiana". </p>
+        </root>"""
+        xml = etree.fromstring(text)
+        node = xml.find(".//fn")
+        self.pipe._move_fn_tail_into_fn(node)
+        self.assertTrue(node.text.strip().startswith("3. Para o surgimento"))
+        self.assertTrue(node.text.strip().endswith("criado em 1808."))
+        self.assertNotIn(
+            "Este jardim esteve mais tarde", " ".join(node.itertext()))
+
     def test__create_p_for_complex_content__creates_p(self):
         text = """<root><fn id="nt01">
            <italic>Isso é conhecido pelos pesquisadores como</italic></fn>
@@ -2294,11 +2322,19 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
          <p><a name="nt"></a><a href="#tx">*</a>
          Autor correspondente: Carla Ghidini    <br/>
          <a name="nt01"></a>
-         <a href="#tx01">1</a> O número de condição de uma matriz <I>M </I>é definido por: &#954;<sub>2</sub>(<i>M</i>) = ||<I>M</I>||<sub>2</sub>||<I>M</I><sup>&#150;1</sup>||<sub>2</sub>.
+         <a href="#tx01">1</a> O número de condição de uma matriz
+         <I>M </I>é definido por: &#954;<sub>2</sub>(<i>M</i>) = ||
+         <I>M</I>||<sub>2</sub>||<I>M</I><sup>&#150;1</sup>||<sub>2</sub>.
          <br/>
-         <a name="nt02"></a><a href="#tx02">2</a> <i>T</i><sub><I>k</I>+1,<I>k </I></sub>= <img src="/img/revistas/tema/v15n3/a05img16.jpg" align="absmiddle"/>, em que &#945;<I><sub>j</sub> = h<sub>ij</sub></I>, &#946;<I><sub>j</sub> = h</I><sub><i>j</i>&#150;1,<I>j</I></sub>.    <br/>
-         <a name="nt03"></a><a href="#tx03">3</a> A norma-A é definida como: ||<i>w</i>||<i><sub>A</sub> </i>= <img src="/img/revistas/tema/v15n3/a05img15.jpg" align="absmiddle"/>.</p></root>"""
-
+         <a name="nt02"></a><a href="#tx02">2</a> <i>T</i><sub><I>k</I>+1,
+         <I>k </I></sub>= <img src="/img/revistas/tema/v15n3/a05img16.jpg"
+         align="absmiddle"/>, em que &#945;<I><sub>j</sub> =
+         h<sub>ij</sub></I>, &#946;<I><sub>j</sub> = h</I><sub><i>j</i>
+         &#150;1,<I>j</I></sub>.    <br/>
+         <a name="nt03"></a><a href="#tx03">3</a> A norma-A é definida como:
+         ||<i>w</i>||<i><sub>A</sub> </i>=
+         <img src="/img/revistas/tema/v15n3/a05img15.jpg" align="absmiddle"/>.
+         </p></root>"""
         xml = etree.fromstring(text)
         text, xml = self.html_pl.ConvertElementsWhichHaveIdPipe(
             self.html_pl).transform((text, xml))

@@ -1314,7 +1314,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
             return c if c.isalnum() else "x"
 
         def replace_not_alphanum(self, name):
-            return ''.join([self._replace_not_alphanum(c) for c in name])
+            if name:
+                return ''.join([self._replace_not_alphanum(c) for c in name])
 
         def parser_node(self, node):
             _id = self.replace_not_alphanum(node.attrib.get("id"))
@@ -1728,6 +1729,10 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 if _next.tag == "fn":
                     break
                 elif (_next.tag == "p" and
+                      not (_next.text or "").strip() and
+                      _next.find("fn") is not None):
+                    break
+                elif (_next.tag == "p" and
                       bool(get_node_text(_next)) and
                       _next.attrib.get("content-type") != "break"):
                     if node.find("p") is None:
@@ -1737,7 +1742,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     items.append(_next)
                 _next = _next.getnext()
             if len(items) > 0 or node.tail:
-                node.text = node.tail
+                node.text = (node.tail or "").strip()
                 for item in items:
                     node.append(deepcopy(item))
                     parent.remove(item)
@@ -1820,14 +1825,14 @@ class ConvertElementsWhichHaveIdPipeline(object):
             if not invalid_node:
                 if not fn_text:
                     self._move_fn_tail_into_fn(node)
+
                 self._identify_label_and_p(node)
 
         def transform(self, data):
             raw, xml = data
-            items = []
             for fn in xml.findall(".//fn"):
+                fn.tail = (fn.tail or "").strip()
                 self.update(fn)
-                items.append(etree.tostring(fn))
             return data
 
 
