@@ -1827,10 +1827,31 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     node.addprevious(node_copy)
                     _remove_element_or_comment(fn)
 
+        def _unnest_fn_nodes_which_are_inside_fn(self, xml):
+            while True:
+                fn = xml.find(".//fn")
+                if fn is None:
+                    break
+                found = fn.find(".//fn")
+                if found is None:
+                    break
+                current = found
+                last = fn
+                parent = current.getparent()
+                remove_items = []
+                while current is not None:
+                    remove_items.append(current)
+                    current = current.getnext()
+                for removed in remove_items[::-1]:
+                    fn.addnext(deepcopy(removed))
+                for removed in remove_items:
+                    parent.remove(removed)
+
         def transform(self, data):
             raw, xml = data
             items = []
             self.reverse_sup_fn(xml)
+            self._unnest_fn_nodes_which_are_inside_fn(xml)
             for fn in xml.findall(".//fn"):
                 self.update(fn)
                 items.append(etree.tostring(fn))
