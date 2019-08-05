@@ -1082,8 +1082,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.SetupPipe(),
             self.RemoveThumbImgPipe(),
             self.AddNameAndIdToElementAPipe(super_obj=html_pipeline),
-            self.DeduceAndSuggestConversionPipe(super_obj=html_pipeline),
             self.RemoveAnchorAndLinksToTextPipe(),
+            self.DeduceAndSuggestConversionPipe(super_obj=html_pipeline),
             self.ApplySuggestedConversionPipe(super_obj=html_pipeline),
             self.AddAssetInfoToTablePipe(super_obj=html_pipeline),
             self.CreateAssetElementsFromExternalLinkElementsPipe(
@@ -1307,23 +1307,30 @@ class ConvertElementsWhichHaveIdPipeline(object):
             return data
 
     class AddNameAndIdToElementAPipe(CustomPipe):
-        """Garante que todos os elemento a[@name] e a[@id] tenham @name e @id"""
+        """Garante que todos os elemento a[@name] e a[@id] tenham @name e @id.
+        Corrige id e name caso contenha caracteres nao alphanum.
+        """
+        def _replace_not_alphanum(self, c):
+            return c if c.isalnum() else "x"
+
+        def replace_not_alphanum(self, name):
+            if name:
+                return ''.join([self._replace_not_alphanum(c) for c in name])
+
         def parser_node(self, node):
-            _id = node.attrib.get("id")
-            _name = node.attrib.get("name")
-            if _id is None or (_name and _id != _name):
-                node.set("id", _name)
-            if _name is None:
-                node.set("name", _id)
+            _id = self.replace_not_alphanum(node.attrib.get("id"))
+            _name = self.replace_not_alphanum(node.attrib.get("name"))
+            node.set("id", _name or _id)
+            node.set("name", _name or _id)
             href = node.attrib.get("href")
-            if href:
-                if href[0] == "#":
-                    a = etree.Element("a")
-                    a.set("name", node.attrib.get("name"))
-                    a.set("id", node.attrib.get("id"))
-                    node.addprevious(a)
-                    node.attrib.pop("id")
-                    node.attrib.pop("name")
+            if href and href[0] == "#":
+                a = etree.Element("a")
+                a.set("name", node.attrib.get("name"))
+                a.set("id", node.attrib.get("id"))
+                node.addprevious(a)
+                node.set("href", "#"+self.replace_not_alphanum(href[1:]))
+                node.attrib.pop("id")
+                node.attrib.pop("name")
 
         def transform(self, data):
             raw, xml = data
@@ -1507,9 +1514,13 @@ class ConvertElementsWhichHaveIdPipeline(object):
         """
         def _identify_order(self, xml):
             items_by_id = {}
-            for a in xml.findall(".//a[@xml_tag]"):
-                if a.attrib.get("xml_tag") == "fn":
-                    _id = a.attrib.get("xml_id")
+            for a in xml.findall(".//a"):
+                _id = a.attrib.get("name")
+                if not _id:
+                    href = a.attrib.get("href")
+                    if href and href.startswith("#"):
+                        _id = href[1:]
+                if _id:
                     items_by_id[_id] = items_by_id.get(_id, [])
                     items_by_id[_id].append(a)
             return items_by_id

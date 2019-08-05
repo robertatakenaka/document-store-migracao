@@ -1468,7 +1468,7 @@ class TestConvertElementsWhichHaveIdPipeline(unittest.TestCase):
 
     def test_fix_element_a(self):
         text = """<root><a name="_ftnref19" href="#_ftn2" id="_ftnref19"><sup>1</sup></a></root>"""
-        expected = b"""<root><a name="_ftnref19" id="_ftnref19"/><a href="#_ftn2"><sup>1</sup></a></root>"""
+        expected = b"""<root><a name="xftnref19" id="xftnref19"/><a href="#xftn2"><sup>1</sup></a></root>"""
         xml = etree.fromstring(text)
         text, xml = self.pl.AddNameAndIdToElementAPipe(self.html_pl).transform((text, xml))
         self.assertEqual(etree.tostring(xml), expected)
@@ -1545,10 +1545,12 @@ class TestConvertElementsWhichHaveIdPipeline(unittest.TestCase):
         </root>"""
         raw, transformed = text, etree.fromstring(text)
         raw, transformed = self.pl.RemoveAnchorAndLinksToTextPipe().transform((raw, transformed))
-        nodes = transformed.findall(".//a[@name='nota']")
+        nodes = transformed.findall(".//a[@name]")
         self.assertEqual(len(nodes), 1)
-        nodes = transformed.findall(".//a[@href='#nota']")
+        self.assertEqual(nodes[0].attrib.get("name"), "nota")
+        nodes = transformed.findall(".//a[@href]")
         self.assertEqual(len(nodes), 1)
+        self.assertEqual(nodes[0].attrib.get("href"), "#nota")
 
     def test_convert_elements_which_have_id_pipeline_removes_some_elements(self):
         text = """<root>
