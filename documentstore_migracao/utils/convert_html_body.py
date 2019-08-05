@@ -1818,9 +1818,19 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     self._move_fn_tail_into_fn(node)
                 self._identify_label_and_p(node)
 
+        def reverse_sup_fn(self, xml):
+            for node in xml.findall(".//sup[fn]"):
+                fn = node.find("fn")
+                if fn.tail:
+                    node_copy = deepcopy(fn)
+                    node_copy.tail = ""
+                    node.addprevious(node_copy)
+                    _remove_element_or_comment(fn)
+
         def transform(self, data):
             raw, xml = data
             items = []
+            self.reverse_sup_fn(xml)
             for fn in xml.findall(".//fn"):
                 self.update(fn)
                 items.append(etree.tostring(fn))

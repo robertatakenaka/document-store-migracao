@@ -2251,6 +2251,13 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertIsNone(fn.find("p/italic").tail)
         self.assertIsNone(fn.find("label"))
 
+    def test_reverse_sup_fn(self):
+        text = """<root><sup><fn id="n4"/>****</sup></root>"""
+        expected = b"""<root><fn id="n4"/><sup>****</sup></root>"""
+        xml = etree.fromstring(text)
+        self.pipe.reverse_sup_fn(xml)
+        self.assertEqual(etree.tostring(xml), expected)
+
     def test__convert_elements_which_have_id_pipe_creates_fn_with_some_paragraphs(self):
         text = """<root>
           <p><fn id="nt"></fn>
