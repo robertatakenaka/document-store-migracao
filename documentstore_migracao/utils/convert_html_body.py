@@ -1832,55 +1832,93 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     self._move_fn_tail_into_fn(node)
                 self._identify_label_and_p(node)
 
-        def _move_fn(self, fn):
-            conditions = (
-                not fn.text,
-                len(fn.getchildren()) == 0,
-                not (fn.tail or "").strip()
-            )
-            if all(conditions):
-                parent = fn.getparent()
-                if parent is not None and parent.tail:
-                    parent.addnext(deepcopy(fn))
-                    parent.remove(fn)
-                    return True
+        def _unnest_fn_nodes_which_are_inside_of_siblings(self, xml):
+            for fn in xml.findall(".//fn"):
+                if fn.getnext() is not None:
+                    fn.set("check", "true")
+            print("")
+            print("_unnest_fn_nodes_which_are_inside_of_siblings")
+            print(etree.tostring(xml))
+            fn = xml.find(".//fn[@check]")
+            while fn is not None:
+                _next = fn.getnext()
+                while _next is not None:
+                    inner_fn = _next.find(".//fn")
+                    node = _next
+                    if inner_fn is not None:
+                        cp = deepcopy(inner_fn)
+                        node.addnext(cp)
+                        node = node.getnext()
+                        inner_parent = inner_fn.getparent()
+                        inner_parent.remove(inner_fn)
+                    _next = _next.getnext()
+                fn.attrib.pop("check")
+                fn = xml.find(".//fn[@check]")
 
-        def _move_fn(self, fn):
-            conditions = (
-                not fn.text,
-                len(fn.getchildren()) == 0,
-                not (fn.tail or "").strip()
-            )
-            if all(conditions):
-                parent = fn.getparent()
-                if parent is not None and parent.tail:
-                    parent.addnext(deepcopy(fn))
-                    parent.remove(fn)
-                    return True
+        def _unnest_fn_nodes_which_are_inside_of_fn(self, xml):
+            for fn in xml.findall(".//fn"):
+                if fn.find(".//fn") is not None:
+                    fn.set("check", "true")
 
-        def move_fn_nodes(self, xml):
-            finished = False
-            while not finished:
-                moved = False
-                for fn in xml.findall(".//fn"):
-                    if self._move_fn(fn):
-                        moved = True
-                        break
-                finished = moved is False
+            fn = xml.find(".//fn[@check]")
+            while fn is not None:
+                node = fn
+                for child in fn.findall(".//fn"):
+                    cp = deepcopy(child)
+                    node.addnext(cp)
+                    node = node.getnext()
+                    parent = child.getparent()
+                    parent.remove(child)
+                fn.attrib.pop("check")
+                fn = xml.find(".//fn[@check]")
+
+        def _unnest_fn_node_which_is_only_child(self, xml):
+            for fn in xml.findall(".//fn"):
+                parent_children = fn.getparent().getchildren()
+                if (len(parent_children) == 1 and
+                    not (fn.tail or "").strip() and
+                    len(fn.getchildren()) == 0 and
+                    not get_node_text(fn)):
+                    fn.set("check", "true")
+            fn = xml.find(".//fn[@check]")
+            while fn is not None:
+                parent = fn.getparent()
+                fn.attrib.pop("check")
+                parent.addnext(deepcopy(fn))
+                parent.remove(fn)
+                fn = xml.find(".//fn[@check]")
 
         def reverse_sup_fn(self, xml):
             for node in xml.findall(".//sup[fn]"):
                 fn = node.find("fn")
-                node_copy = deepcopy(fn)
-                node_copy.tail = ""
-                node.addprevious(node_copy)
-                _remove_element_or_comment(fn)
+                if fn.tail:
+                    node_copy = deepcopy(fn)
+                    node_copy.tail = ""
+                    node.addprevious(node_copy)
+                    _remove_element_or_comment(fn)
 
         def transform(self, data):
             raw, xml = data
             self.reverse_sup_fn(xml)
-            self.sup_fn()
-            self.move_fn_nodes(xml)
+            self._unnest_fn_node_which_is_only_child(xml)
+            print("")
+            print("x-x-x-xx")
+            print(etree.tostring(xml))
+            print("xxxxx")
+            print("")
+
+            self._unnest_fn_nodes_which_are_inside_of_fn(xml)
+            print("")
+            print("y-y-y-yy")
+            print(etree.tostring(xml))
+            print("yyyyy")
+            print("")
+            self._unnest_fn_nodes_which_are_inside_of_siblings(xml)
+            print("")
+            print("zzz-zzz-zzz-zzzzzz")
+            print(etree.tostring(xml))
+            print("zzz")
+            print("")
             for fn in xml.findall(".//fn"):
                 self.update(fn)
             return data

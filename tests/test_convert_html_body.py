@@ -2139,7 +2139,6 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
 
         text, xml = self.pipe.transform((text, xml))
         fn = xml.find(".//fn")
-        fn = xml.find(".//fn")
         self.assertEqual(fn.find("p/italic").text, "Isso é conhecido pelos pesquisadores como")
         self.assertEqual(fn.find("p/italic").tail.strip(), "")
         self.assertEqual(fn.find("label").text, "**")
@@ -2190,6 +2189,7 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertIn(".", node.find("italic").tail)
         self.assertIsNone(node.getparent().find("p"))
         text, xml = self.pipe.transform((text, xml))
+
         fn = xml.find(".//fn")
         self.assertEqual(fn.find("p/italic").text, "Isso é conhecido pelos pesquisadores como")
         self.assertEqual(fn.find("p/italic").tail.strip(), ".")
@@ -2280,7 +2280,6 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         text, xml = self.pipe.transform((text, xml))
 
         fn = xml.findall(".//fn")
-
         self.assertEqual(fn[0].find("label").text, "1.")
         self.assertTrue(
             fn[0].find("p/italic").text.strip().startswith("Este texto foi"))
@@ -2305,13 +2304,11 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertTrue(
             fn[3].find("p/italic").text.strip().endswith("Buenos Aires."))
 
-
-    def test__move_fn_moves_fn_out_of_x(self):
+    def test__unnest_fn_node_which_is_only_child_moves_fn_out_of_x(self):
         text = """<root><x><fn id="back1"/></x>1.</root>"""
         expected = b"""<root><x/><fn id="back1"/>1.</root>"""
         xml = etree.fromstring(text)
-        node = xml.find(".//fn")
-        self.pipe._move_fn(node)
+        self.pipe._unnest_fn_node_which_is_only_child(xml)
         self.assertEqual(etree.tostring(xml), expected)
 
     def test__create_p_for_complex_content__creates_p(self):
@@ -2552,3 +2549,28 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         xml = etree.fromstring(text)
         self.pipe.reverse_sup_fn(xml)
         self.assertEqual(etree.tostring(xml), expected)
+
+    def test__unnest_fn_nodes_which_are_inside_of_siblings(self):
+        text = """<root>
+         <p><fn id="back1"><label>1.</label>
+         <p><italic> Este texto foi apresentado em reuni&#227;o pedag&#243;gica do
+         departamento    de Psicologia da UFPR, no ano de 1993,
+         com a finalidade de subsidiar discuss&#245;es    sobre a reformula&#231;&#227;o
+         curricular do curso de psicologia.       <fn id="back2"/>
+         </italic></p></fn></p>
+         </root>"""
+        expected = b"""<root>
+         <p><fn id="back1"><label>1.</label>
+         <p><italic> Este texto foi apresentado em reuni&#227;o pedag&#243;gica do
+         departamento    de Psicologia da UFPR, no ano de 1993,
+         com a finalidade de subsidiar discuss&#245;es    sobre a reformula&#231;&#227;o
+         curricular do curso de psicologia.
+         </italic></p></fn><fn id="back2"/></p>
+         </root>
+        """
+        xml = etree.fromstring(text)
+        fn = xml.findall(".//fn")
+        self.assertEqual(fn[0].find(".//fn"), fn[1])
+        self.pipe._unnest_fn_nodes_which_are_inside_of_siblings(xml)
+        fn = xml.findall(".//fn")
+        self.assertEqual(fn[0].getnext(), fn[1])
