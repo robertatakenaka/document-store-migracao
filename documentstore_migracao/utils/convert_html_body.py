@@ -1751,17 +1751,36 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 else:
                     self._wrap_content(node, first_text, children)
 
-        def _create_label(self, node):
-            children = node.getchildren()
-            if (node.text or "").strip():
-                texts = node.text.strip().split()
-                if not texts[0].isalpha():
+        def _find_label_text(self, text):
+            label_text = []
+            for c in text:
+                if not c.isalpha():
+                    label_text.append(c)
+                else:
+                    break
+            return "".join(label_text)
+
+        def _create_label_from_node_text(self, node):
+            node_text = (node.text or "").strip()
+            if node_text:
+                splitted = node_text.split()
+                label_text = None
+                if node_text[0].isalpha():
+                    if (len(splitted[0]) == 1 and
+                        node_text[0].lower() == node_text[0]):
+                        label_text = splitted[0]
+                else:
+                    label_text = self._find_label_text(splitted[0])
+                if label_text:
                     label = etree.Element("label")
-                    label.text = texts[0]
+                    label.text = label_text
                     node.insert(0, label)
-                    label.tail = node.text.replace(texts[0], "").lstrip()
+                    label.tail = node.text.replace(label_text, "").lstrip()
                     node.text = ""
-            elif children:
+
+        def _create_label_from_node_first_child(self, node):
+            children = node.getchildren()
+            if len(children) > 0:
                 if children[0].tag == "p":
                     elem = children[0].find("*")
                     if elem is not None and elem.tag in ["sup", "bold"]:
@@ -1777,6 +1796,14 @@ class ConvertElementsWhichHaveIdPipeline(object):
                         label.tail = children[0].tail
                         node.insert(0, label)
                         node.remove(children[0])
+
+        def _create_label(self, node):
+            children = node.getchildren()
+            node_text = (node.text or "").strip()
+            if node_text:
+                self._create_label_from_node_text(node)
+            elif children:
+                self._create_label_from_node_first_child(node)
 
         def _wrap_content(self, node, first_text, children):
             new_p = etree.Element("p")

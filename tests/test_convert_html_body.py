@@ -2431,3 +2431,16 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         node.text = ""
         self.complete_fn_pipe._create_p_elements(node, text, children)
         self.assertEqual(etree.tostring(xml), expected)
+
+    def test__create_label_identifies_double_asterisks_as_label(self):
+        text = """<root>
+        <fn id="top2">
+        **Aluno de p&#243;s-gradua&#231;&#227;o em Epidemiologia
+        da Faculdade de Medicina da UFPel.</fn></root>"""
+        expected = b"""<root>
+        <fn id="top2"><label>**</label>Aluno de p&#243;s-gradua&#231;&#227;o em Epidemiologia
+        da Faculdade de Medicina da UFPel.</fn></root>"""
+        xml = etree.fromstring(text)
+        node = xml.find(".//fn")
+        self.complete_fn_pipe._create_label(node)
+        self.assertEqual(etree.tostring(xml), expected)
