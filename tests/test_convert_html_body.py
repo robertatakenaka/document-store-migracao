@@ -1569,7 +1569,7 @@ class TestConvertElementsWhichHaveIdPipeline(unittest.TestCase):
         self.assertEqual(len(nodes), 1)
         nodes = xml.findall(".//fn")
         self.assertEqual(nodes[0].find("label").text, "1")
-        self.assertEqual(nodes[0].find("p").text, "Nota bla bla")
+        self.assertEqual(nodes[0].find("p").text.strip(), "Nota bla bla")
 
         nodes = xml.findall(".//xref")
         self.assertEqual(len(nodes), 1)
@@ -2094,28 +2094,28 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
 
     def test__create_label__creates_label(self):
         text = """<root><fn>** TEXTO NOTA</fn></root>"""
-        expected = b"""<root><fn><label>**</label> TEXTO NOTA</fn></root>"""
-        expected_final = b"""<root><fn><label>**</label><p> TEXTO NOTA</p></fn></root>"""
+        expected = b"""<root><fn><label>**</label>TEXTO NOTA</fn></root>"""
+        expected_final = b"""<root><fn><label>**</label><p>TEXTO NOTA</p></fn></root>"""
 
         xml = etree.fromstring(text)
         node = xml.find(".//fn")
 
         self.complete_fn_pipe._create_label(node)
         label = node.find("label")
-        self.assertEqual(label.tail, " TEXTO NOTA")
+        self.assertEqual(label.tail, "TEXTO NOTA")
         self.assertEqual(label.text, "**")
         self.assertEqual(etree.tostring(xml), expected)
 
         text, xml = self.complete_fn_pipe.transform((text, xml))
         fn = xml.find(".//fn")
-        self.assertEqual(fn.find("p").text, " TEXTO NOTA")
+        self.assertEqual(fn.find("p").text, "TEXTO NOTA")
         self.assertEqual(fn.find("label").text, "**")
 
 
     def test__create_label__creates_label_from_style_tag(self):
         text = """<root><fn><sup>**</sup> TEXTO NOTA</fn></root>"""
         expected = b"""<root><fn><label><sup>**</sup></label> TEXTO NOTA</fn></root>"""
-        expected_final = b"""<root><fn><label><sup>**</sup></label><p> TEXTO NOTA</p></fn></root>"""
+        expected_final = b"""<root><fn><label><sup>**</sup></label><p>TEXTO NOTA</p></fn></root>"""
         xml = etree.fromstring(text)
         node = xml.find(".//fn")
 
@@ -2127,8 +2127,26 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
 
         text, xml = self.complete_fn_pipe.transform((text, xml))
         fn = xml.find(".//fn")
-        self.assertEqual(fn.find("p").text, " TEXTO NOTA")
+        self.assertEqual(fn.find("p").text, "TEXTO NOTA")
         self.assertEqual(fn.find("label/sup").text, "**")
+
+    def test__identify_label_and_p__identifies_p(self):
+        text = """<root><fn>TEXTO NOTA</fn></root>"""
+        expected = b"""<root><fn><p>TEXTO NOTA</p></fn></root>"""
+        expected_final = b"""<root><fn><p>TEXTO NOTA</p></fn></root>"""
+        xml = etree.fromstring(text)
+        node = xml.find(".//fn")
+
+        self.complete_fn_pipe._create_label(node)
+        self.assertEqual(node.text, "TEXTO NOTA")
+        self.complete_fn_pipe._identify_label_and_p(node)
+        self.assertEqual(node.text, "")
+        self.assertEqual(etree.tostring(xml), expected)
+
+        text, xml = self.complete_fn_pipe.transform((text, xml))
+        fn = xml.find(".//fn")
+        self.assertEqual(fn.find("p").text, "TEXTO NOTA")
+        self.assertIsNone(fn.find("label"))
 
     def test__identify_label_and_p__identifies_p(self):
         text = """<root><fn>TEXTO NOTA</fn></root>"""
@@ -2160,6 +2178,7 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertEqual(etree.tostring(xml), expected)
 
         text, xml = self.complete_fn_pipe.transform((text, xml))
+        print(etree.tostring(xml))
         fn = xml.find(".//fn")
         self.assertEqual(fn.find("p").text, "TEXTO NOTA")
         self.assertEqual(fn.find("label").text, "**")
@@ -2289,30 +2308,6 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertEqual(fn.find(".//p[2]").text, "Email: a@x.org")
         self.assertEqual(fn.find("label").text, "**")
 
-    def test__create_p_for_complex_content__creates_p(self):
-        text = """<root><fn id="nt01">
-           <italic>Isso é conhecido pelos pesquisadores como</italic></fn>
-         </root>"""
-        expected = """<root><fn id="nt01"><p>
-            <italic>Isso é conhecido pelos pesquisadores como</italic></p></fn>
-        </root>"""
-        expected_final = """<root><fn id="nt01"><p>
-            <italic>Isso é conhecido pelos pesquisadores como</italic></p></fn>
-        </root>"""
-
-        xml = etree.fromstring(text)
-        node = xml.find(".//fn")
-
-        self.complete_fn_pipe._create_p_for_complex_content(node)
-        self.assertEqual(node.attrib.get("id"), "nt01")
-        self.assertIn("Isso", node.find("p/italic").text)
-
-        text, xml = self.complete_fn_pipe.transform((text, xml))
-        fn = xml.find(".//fn")
-        self.assertEqual(fn.find("p/italic").text, "Isso é conhecido pelos pesquisadores como")
-        self.assertIsNone(fn.find("p/italic").tail)
-        self.assertIsNone(fn.find("label"))
-
     def test_reverse_sup_fn(self):
         text = """<root><sup><fn id="n4"/>****</sup></root>"""
         expected = b"""<root><fn id="n4"/><sup>****</sup></root>"""
@@ -2350,3 +2345,89 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertEqual(fn[1].getnext(), fn[2])
         self.assertEqual(fn[2].getnext(), None)
         self.assertTrue(fn[2].tail.startswith(" texto back 3"))
+
+    def test__wrap_content_fn_with_label(self):
+        text = """<root><fn><label>1</label>Texto
+        <italic>i</italic> Tail de italic <bold>i</bold> Tail de bold</fn>
+        </root>"""
+        expected = b"""<root><fn><label>1</label><p>Texto
+        <italic>i</italic> Tail de italic <bold>i</bold> Tail de bold</p></fn>
+        </root>"""
+        xml = etree.fromstring(text)
+        node = xml.find(".//fn")
+        children = node.getchildren()[1:]
+        label = node.find("label")
+        text = label.tail
+        label.tail = ""
+        self.complete_fn_pipe._wrap_content(node, text, children)
+        self.assertEqual(etree.tostring(xml), expected)
+
+    def test__wrap_content_fn_without_label(self):
+        text = """<root><fn>Texto
+        <italic>i</italic> Tail de italic <bold>i</bold> Tail de bold</fn>
+        </root>"""
+        expected = b"""<root><fn><p>Texto
+        <italic>i</italic> Tail de italic <bold>i</bold> Tail de bold</p></fn>
+        </root>"""
+        xml = etree.fromstring(text)
+        node = xml.find(".//fn")
+        children = node.getchildren()
+        text = node.text
+        node.text = ""
+        self.complete_fn_pipe._wrap_content(node, text, children)
+        self.assertEqual(etree.tostring(xml), expected)
+
+    def test__create_p_elements_fn_with_label(self):
+        text = """<root><fn><label>1</label>
+        Abcde <italic>S. trew</italic> 1234.
+        <p>O inimigo natural mais abundante é o predador
+        <italic>D. luteipes</italic>.</p>
+        Ghijk lmnop <italic>S. zeamais</italic> xyimo, pkijhnm
+        <bold>perdas</bold> nesse cultivo.
+        </fn></root>"""
+        expected = """<root><fn><label>1</label><p>Abcde <italic>S. trew</italic> 1234.
+        </p><p>O inimigo natural mais abundante é o predador
+        <italic>D. luteipes</italic>.</p><p>Ghijk lmnop <italic>S. zeamais</italic> xyimo, pkijhnm
+        <bold>perdas</bold> nesse cultivo.
+        </p></fn></root>"""
+        xml = etree.fromstring(text)
+        node = xml.find(".//fn")
+        children = node.getchildren()[1:]
+        label = node.find("label")
+        text = label.tail
+        label.tail = ""
+        self.complete_fn_pipe._create_p_elements(node, text, children)
+        self.assertEqual(etree.tostring(xml, encoding="unicode"), expected)
+
+    def test__create_p_elements_for_fn_with_label_bold_xref(self):
+        text = """<root><fn><label>1</label>Texto
+        <p>i</p> Tail de p <bold>i</bold> Tail de bold
+         <xref>i</xref> Tail de xref</fn>
+        </root>"""
+        expected = b"""<root><fn><label>1</label><p>Texto
+        </p><p>i</p><p>Tail de p <bold>i</bold> Tail de bold
+         <xref>i</xref> Tail de xref</p></fn>
+        </root>"""
+        xml = etree.fromstring(text)
+        node = xml.find(".//fn")
+        children = node.getchildren()[1:]
+        label = node.find(".//label")
+        text = label.tail
+        label.tail = ""
+        self.complete_fn_pipe._create_p_elements(node, text, children)
+        self.assertEqual(etree.tostring(xml), expected)
+
+    def test__create_p_elements_fn_without_label(self):
+        text = """<root><fn>Texto
+        <p>i</p> Tail de p <bold>i</bold> Tail de bold</fn>
+        </root>"""
+        expected = b"""<root><fn><p>Texto
+        </p><p>i</p><p>Tail de p <bold>i</bold> Tail de bold</p></fn>
+        </root>"""
+        xml = etree.fromstring(text)
+        node = xml.find(".//fn")
+        children = node.getchildren()
+        text = node.text
+        node.text = ""
+        self.complete_fn_pipe._create_p_elements(node, text, children)
+        self.assertEqual(etree.tostring(xml), expected)
