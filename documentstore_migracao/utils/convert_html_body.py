@@ -215,16 +215,44 @@ class HTML2SPSPipeline(object):
             return data
 
     class RemoveExcedingStyleTagsPipe(plumber.Pipe):
-        TAGS = ("b", "i", "em", "strong", "u")
+        TAGS = ("b", "i", "em", "strong", "u", "sup")
 
-        def transform(self, data):
+        def _exchange_tag_names(self, node):
+            children = node.getchildren()
+            if (not (children[0].tail or "").strip() and
+                    not (node.text or "").strip()):
+                children[0].tag = node.tag
+                node.tag = "p"
+                for name, value in children[0].attrib.items():
+                    node.set(name, value)
+                    children[0].attrib.pop(name)
+
+        def _remove_tag_if_it_is_exceeding(self, data):
             raw, xml = data
             for tag in self.TAGS:
                 for node in xml.findall(".//" + tag):
+                    print("\n_remove_tag_if_it_is_exceeding")
+                    print(etree.tostring(node))
                     text = get_node_text(node)
+                    children = node.getchildren()
                     if not text:
                         node.tag = "STRIPTAG"
+                        print("\n0)")
+                    elif node.find(".//{}".format(tag)) is not None:
+                        node.tag = "STRIPTAG"
+                        print("\n1)")
+                    elif len(children) == 1 and children[0].tag == "p":
+                        self._exchange_tag_names(node)
+                        print("\n2)")
+                    print("-")
+                    print(etree.tostring(node))
+                    print("-----")
+
             etree.strip_tags(xml, "STRIPTAG")
+            return data
+
+        def transform(self, data):
+            data = self._remove_tag_if_it_is_exceeding(data)
             return data
 
     class RemoveEmptyPipe(plumber.Pipe):
@@ -1324,29 +1352,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
             raw, xml = data
             _process(xml, "a[@id]", self.parser_node)
             _process(xml, "a[@name]", self.parser_node)
-            return data
-
-    class RemoveInternalLinksToTextIdentifiedByAsteriskPipe(CustomPipe):
-        """
-        Ao encontrar ```<a href="#tx">*</a>```, remove a tag e atributos,
-        deixando apenas *. Também localiza a referência cruzada correspondente,
-        por exemplo, ```<a name="tx">*</a>``` para remover também.
-        """
-        def parser_node(self, node):
-            href = node.attrib.get("href")
-            texts = get_node_text(node)
-            if href.startswith("#") and texts and texts[0] == "*":
-                previous = node.getprevious()
-                if previous is not None and previous.tag == "a":
-                    root = node.getroottree()
-                    related = root.find(".//*[@name='{}']".format(href[1:]))
-                    if related is not None:
-                        _remove_element_or_comment(related)
-                    _remove_element_or_comment(node)
-
-        def transform(self, data):
-            raw, xml = data
-            _process(xml, "a[@href]", self.parser_node)
             return data
 
     class DeduceAndSuggestConversionPipe(CustomPipe):
