@@ -72,15 +72,15 @@ def wrap_content_node(_node, elem_wrap="p"):
 
 def gera_id(_string, index_body):
     rid = _string
+    if rid:
+        if not rid[0].isalpha():
+            rid = "replace_by_reftype" + rid
 
-    if not rid[0].isalpha():
-        rid = "replace_by_reftype" + rid
+        if index_body == 1:
+            return rid.lower()
 
-    if index_body == 1:
-        return rid.lower()
-
-    ref_id = "%s-body%s" % (rid, index_body)
-    return ref_id.lower()
+        ref_id = "%s-body%s" % (rid, index_body)
+        return ref_id.lower()
 
 
 def find_or_create_asset_node(root, elem_name, elem_id, node=None):
@@ -987,7 +987,7 @@ class HTML2SPSPipeline(object):
                         body.remove(child)
                     elif child.tail:
                         new_child = etree.Element("p")
-                        new_child.text = child.tail.strip()
+                        new_child.text = (child.tail or "").strip()
                         child.tail = child.tail.replace(new_child.text, "")
                         child.addnext(new_child)
             return data
@@ -1728,37 +1728,16 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 node.tail = ""
 
         def _identify_label_and_p(self, node):
-            """Para fn que contém text, mas nao contém filhos,
-            identificar label (se houver) e p.
-            """
             self._create_label(node)
+            self._create_p(node)
 
+        def _create_label(self, node):
             children = node.getchildren()
-            if len(children) == 0:
-                new_p = etree.Element("p")
-                new_p.text = node.text.strip()
-                node.text = ""
-                node.insert(0, new_p)
-            else:
-                first_text = node.text
-                node.text = ""
-                if children[0].tag == "label":
-                    first_text = children[0].tail.lstrip()
-                    children[0].tail = ""
-                    children = children[1:]
-                if "p" in [child.tag for child in children]:
-                    self._create_p_elements(node, first_text, children)
-                else:
-                    self._wrap_content(node, first_text, children)
-
-        def _find_label_text(self, text):
-            label_text = []
-            for c in text:
-                if not c.isalpha():
-                    label_text.append(c)
-                else:
-                    break
-            return "".join(label_text)
+            node_text = (node.text or "").strip()
+            if node_text:
+                self._create_label_from_node_text(node)
+            elif children:
+                self._create_label_from_node_first_child(node)
 
         def _create_label_from_node_text(self, node):
             node_text = (node.text or "").strip()
@@ -1777,6 +1756,15 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     node.insert(0, label)
                     label.tail = node.text.replace(label_text, "").lstrip()
                     node.text = ""
+
+        def _find_label_text(self, text):
+            label_text = []
+            for c in text:
+                if not c.isalpha():
+                    label_text.append(c)
+                else:
+                    break
+            return "".join(label_text)
 
         def _create_label_from_node_first_child(self, node):
             children = node.getchildren()
@@ -1797,37 +1785,28 @@ class ConvertElementsWhichHaveIdPipeline(object):
                         node.insert(0, label)
                         node.remove(children[0])
 
-        def _create_label(self, node):
+        def _create_p(self, node):
             children = node.getchildren()
-            node_text = (node.text or "").strip()
-            if node_text:
-                self._create_label_from_node_text(node)
-            elif children:
-                self._create_label_from_node_first_child(node)
-
-        def _wrap_content(self, node, first_text, children):
-            new_p = etree.Element("p")
-            if (first_text or "").strip():
-                new_p.text = first_text
-            for child in children:
-                new_p.append(deepcopy(child))
-                node.remove(child)
-            node.append(new_p)
-
-        def _create_p_element(self, node, first_text, elements):
-            if len(elements) > 0 or (first_text or "").strip():
+            if len(children) == 0:
+                # no label
                 new_p = etree.Element("p")
-                node.append(new_p)
-                new_p.text = first_text.lstrip()
-                for element in elements:
-                    new_p.append(deepcopy(element))
-                    node.remove(element)
+                new_p.text = (node.text or "").strip()
+                node.text = ""
+                node.insert(0, new_p)
+            else:
+                first_text = node.text
+                node.text = ""
+                if children[0].tag == "label":
+                    first_text = (children[0].tail or "").lstrip()
+                    children[0].tail = ""
+                    children = children[1:]
+                self._create_p_elements(node, first_text, children)
 
         def _create_p_elements(self, node, first_text, children):
             elements = []
             for child in children:
                 if child.tag == "p":
-                    self._create_p_element(node, first_text, elements)
+                    self._create_one_p(node, first_text, elements)
                     elements = []
                     first_text = child.tail
                     child.tail = ""
@@ -1835,8 +1814,17 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     node.remove(child)
                 else:
                     elements.append(child)
-            if len(elements) > 0:
-                self._create_p_element(node, first_text, elements)
+            if len(elements) > 0 or first_text:
+                self._create_one_p(node, first_text, elements)
+
+        def _create_one_p(self, node, first_text, elements):
+            if len(elements) > 0 or (first_text or "").strip():
+                new_p = etree.Element("p")
+                node.append(new_p)
+                new_p.text = (first_text or "").lstrip()
+                for element in elements:
+                    new_p.append(deepcopy(element))
+                    node.remove(element)
 
         def update(self, node):
             parent = node.getparent()
@@ -1849,14 +1837,20 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     self._move_fn_tail_into_fn(node)
                 self._identify_label_and_p(node)
 
-        def reverse_sup_fn(self, xml):
-            for node in xml.findall(".//sup[fn]"):
-                fn = node.find("fn")
-                if fn.tail:
-                    node_copy = deepcopy(fn)
-                    node_copy.tail = ""
-                    node.addprevious(node_copy)
-                    _remove_element_or_comment(fn)
+        def fix_move_style_tags_into_fn(self, xml):
+            changed = True
+            while changed:
+                changed = False
+                for tag in ["sup", "bold", "italic"]:
+                    node = xml.find(".//{}[fn]".format(tag))
+                    while node is not None:
+                        fn = node.find("fn")
+                        node_copy = deepcopy(fn)
+                        node_copy.tail = ""
+                        node.addprevious(node_copy)
+                        _remove_element_or_comment(fn)
+                        changed = True
+                        node = xml.find(".//{}[fn]".format(tag))
 
         def _unnest_fn_nodes_which_are_inside_fn(self, xml):
             while True:
@@ -1880,16 +1874,10 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
         def transform(self, data):
             raw, xml = data
-            self.reverse_sup_fn(xml)
+            self.fix_move_style_tags_into_fn(xml)
             self._unnest_fn_nodes_which_are_inside_fn(xml)
             for fn in xml.findall(".//fn"):
-                print("")
-                print(etree.tostring(fn))
                 self.update(fn)
-                print("")
-                print(etree.tostring(fn))
-                print("")
-
             return data
 
 
@@ -1971,23 +1959,6 @@ def _preserve_node_tail_before_remove_node(node, node_text):
             previous.tail = join_texts([(previous.tail or "").rstrip(), text])
         else:
             parent.text = join_texts([(parent.text or "").rstrip(), text])
-
-
-def old_gera_id(_string, index_body):
-    rid = _string
-    number_item = re.search(r"([a-zA-Z]{1,3})(\d+)([a-zA-Z0-9]+)?", _string)
-    if number_item:
-        name_item, number_item, sufix_item = number_item.groups("")
-        rid = name_item + number_item + sufix_item
-
-    if not rid[0].isalpha():
-        rid = "replace_by_reftype" + rid
-
-    if index_body == 1:
-        return rid.lower()
-
-    ref_id = "%s-body%s" % (rid, index_body)
-    return ref_id.lower()
 
 
 def search_asset_node_backwards(node, attr="id"):

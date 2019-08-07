@@ -641,7 +641,6 @@ class Test_RemovePWhichIsParentOfPPipe_Case1(unittest.TestCase):
 
         data = self.text, self.xml
         raw, transformed = self.pipe.transform(data)
-        print("?????", etree.tostring(transformed))
 
         self.assertEqual(len(transformed.findall(".//body//p")), 2)
         self.assertEqual(len(transformed.findall(".//body//*")), 2)
@@ -2178,7 +2177,6 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertEqual(etree.tostring(xml), expected)
 
         text, xml = self.complete_fn_pipe.transform((text, xml))
-        print(etree.tostring(xml))
         fn = xml.find(".//fn")
         self.assertEqual(fn.find("p").text, "TEXTO NOTA")
         self.assertEqual(fn.find("label").text, "**")
@@ -2308,11 +2306,20 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertEqual(fn.find(".//p[2]").text, "Email: a@x.org")
         self.assertEqual(fn.find("label").text, "**")
 
-    def test_reverse_sup_fn(self):
+    def test_fix_move_style_tags_into_fn_moves_sup(self):
         text = """<root><sup><fn id="n4"/>****</sup></root>"""
         expected = b"""<root><fn id="n4"/><sup>****</sup></root>"""
         xml = etree.fromstring(text)
-        self.complete_fn_pipe.reverse_sup_fn(xml)
+        self.complete_fn_pipe.fix_move_style_tags_into_fn(xml)
+        self.assertEqual(etree.tostring(xml), expected)
+
+    def test_fix_move_style_tags_into_fn_moves_bold(self):
+        text = """<root><sup><fn id="n3"/></sup>
+        <bold><fn id="n4"/><sup>****</sup></bold></root>"""
+        expected = b"""<root><fn id="n3"/><sup/>
+        <fn id="n4"/><bold><sup>****</sup></bold></root>"""
+        xml = etree.fromstring(text)
+        self.complete_fn_pipe.fix_move_style_tags_into_fn(xml)
         self.assertEqual(etree.tostring(xml), expected)
 
     def test__unnest_fn_nodes_which_are_inside_fn(self):
@@ -2359,7 +2366,7 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         label = node.find("label")
         text = label.tail
         label.tail = ""
-        self.complete_fn_pipe._wrap_content(node, text, children)
+        self.complete_fn_pipe._create_p_elements(node, text, children)
         self.assertEqual(etree.tostring(xml), expected)
 
     def test__wrap_content_fn_without_label(self):
@@ -2374,7 +2381,7 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         children = node.getchildren()
         text = node.text
         node.text = ""
-        self.complete_fn_pipe._wrap_content(node, text, children)
+        self.complete_fn_pipe._create_p_elements(node, text, children)
         self.assertEqual(etree.tostring(xml), expected)
 
     def test__create_p_elements_fn_with_label(self):
