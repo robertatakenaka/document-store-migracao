@@ -231,23 +231,15 @@ class HTML2SPSPipeline(object):
             raw, xml = data
             for tag in self.TAGS:
                 for node in xml.findall(".//" + tag):
-                    print("\n_remove_tag_if_it_is_exceeding")
-                    print(etree.tostring(node))
                     text = get_node_text(node)
                     children = node.getchildren()
                     if not text:
                         node.tag = "STRIPTAG"
-                        print("\n0)")
                     elif node.find(".//{}".format(tag)) is not None:
                         node.tag = "STRIPTAG"
-                        print("\n1)")
                     elif len(children) == 1 and children[0].tag == "p":
                         self._exchange_tag_names(node)
-                        print("\n2)")
-                    print("-")
-                    print(etree.tostring(node))
-                    print("-----")
-
+                    
             etree.strip_tags(xml, "STRIPTAG")
             return data
 
@@ -1100,6 +1092,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.AddNameAndIdToElementAPipe(super_obj=html_pipeline),
             self.RemoveAnchorAndLinksToTextPipe(),
             self.DeduceAndSuggestConversionPipe(super_obj=html_pipeline),
+            self.ValidateSuggestedFnPipe(super_obj=html_pipeline),
             self.ApplySuggestedConversionPipe(super_obj=html_pipeline),
             self.AddAssetInfoToTablePipe(super_obj=html_pipeline),
             self.CreateAssetElementsFromExternalLinkElementsPipe(
@@ -1528,6 +1521,39 @@ class ConvertElementsWhichHaveIdPipeline(object):
             raw, xml = data
             items_by_id = self._identify_order(xml)
             self._exclude(items_by_id)
+            return data
+
+    class ValidateSuggestedFnPipe(CustomPipe):
+        """
+        Converte os elementos a, para as tags correspondentes, considerando
+        os valores dos atributos: @xml_tag, @xml_id, @xml_reftype, @xml_label,
+        inseridos por DeduceAndSuggestConversionPipe()
+        """
+        def _remove_a(self, a_name, a_href_items):
+            _remove_element_or_comment(a_name, True)
+            for a_href in a_href_items:
+                _remove_element_or_comment(a_href, True)
+
+        def _update_a_name(self, node, new_id, new_tag):
+            _name = node.attrib.get("name")
+            node.attrib.clear()
+            node.set("id", new_id)
+            if new_tag == "symbol":
+                node.set("symbol", _name)
+                new_tag = "fn"
+            elif new_tag == "corresp":
+                node.set("fn-type", "corresp")
+                new_tag = "fn"
+            node.tag = new_tag
+
+        def transform(self, data):
+            raw, xml = data
+            self.super_obj.document.xmltree = xml
+            for name, a_name_and_hrefs in self.super_obj.document.a_names.items():
+                a_name, a_hrefs = a_name_and_hrefs
+                if len(a_hrefs) == 0 and a_name.attrib.get("xml_tag") == "fn":
+                    a_name.attrib["xml_tag"] = "target"
+                    a_name.attrib["xml_reftype"] = "target"
             return data
 
     class ApplySuggestedConversionPipe(CustomPipe):
