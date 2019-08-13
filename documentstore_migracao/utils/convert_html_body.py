@@ -1440,6 +1440,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
             for name, a_name_and_hrefs in a_names.items():
                 new_id = None
                 a_name, a_hrefs = a_name_and_hrefs
+                print("")
+                print(etree.tostring(a_name))
                 complete, incomplete = self._classify_nodes(a_hrefs)
                 if complete:
                     text, tag, reftype, new_id = complete
@@ -1454,6 +1456,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
                         new_id = gera_id(name, self.super_obj.index_body)
                         text = ""
                 if new_id:
+                    print(tag, reftype, new_id, text)
                     self._update(a_name, tag, reftype, new_id, text)
                     for node in incomplete:
                         self._update(node, tag, reftype, new_id, text)
@@ -1518,9 +1521,15 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
         def _exclude(self, items_by_id):
             for _id, nodes in items_by_id.items():
+                repeated = [n for n in nodes if n.attrib.get("name")]
+                if len(repeated) > 1:
+                    for n in repeated[1:]:
+                        nodes.remove(n)
                 if len(nodes) >= 2 and nodes[0].attrib.get("name"):
                     for n in nodes:
                         _remove_element_or_comment(n)
+
+
 
         def transform(self, data):
             raw, xml = data
@@ -1567,15 +1576,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
                         xref_text = get_node_text(xref)
                         xref_parent_text = get_node_text(xref.getparent())
                         if fn_text == xref_text == xref_parent_text:
-                            print("")
-                            print(etree.tostring(fn))
-                            print(etree.tostring(xref))
                             xref.set("ref-type", "other")
                             fn.tag = "target"
-                            print("")
-                            print(etree.tostring(fn))
-                            print(etree.tostring(xref))
-                            print("--")
             return data
 
     class ApplySuggestedConversionPipe(CustomPipe):
@@ -1623,8 +1625,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     reftype = a_name.attrib.get("xml_reftype")
                     self._update_a_name(a_name, new_id, new_tag)
                     self._update_a_href_items(a_hrefs, new_id, reftype)
-                else:
-                    self._remove_a(a_name, a_hrefs)
             return data
 
     class APipe(CustomPipe):
