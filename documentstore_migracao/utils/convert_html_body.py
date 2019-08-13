@@ -239,7 +239,7 @@ class HTML2SPSPipeline(object):
                         node.tag = "STRIPTAG"
                     elif len(children) == 1 and children[0].tag == "p":
                         self._exchange_tag_names(node)
-                    
+
             etree.strip_tags(xml, "STRIPTAG")
             return data
 
@@ -1594,6 +1594,10 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 if a_name.attrib.get("xml_id"):
                     new_id = a_name.attrib.get("xml_id")
                     new_tag = a_name.attrib.get("xml_tag")
+                    if new_tag == "fn":
+                        if a_name.tail and "corresp" in a_name.tail.lower():
+                            new_tag = "corresp"
+                            reftype = "corresp"
                     reftype = a_name.attrib.get("xml_reftype")
                     self._update_a_name(a_name, new_id, new_tag)
                     self._update_a_href_items(a_hrefs, new_id, reftype)
@@ -1868,7 +1872,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     self._move_fn_tail_into_fn(node)
                 self._identify_label_and_p(node)
 
-        def fix_move_style_tags_into_fn(self, xml):
+        def move_fn_out_and_backwards(self, xml):
             changed = True
             while changed:
                 changed = False
@@ -1883,30 +1887,37 @@ class ConvertElementsWhichHaveIdPipeline(object):
                         changed = True
                         node = xml.find(".//{}[fn]".format(tag))
 
-        def _unnest_fn_nodes_which_are_inside_fn(self, xml):
+        def move_fn_out_and_forwards(self, xml):
             while True:
-                fn = xml.find(".//fn")
-                if fn is None:
+                for fn in xml.findall(".//fn"):
+                    parent = fn.getparent()
+                    if (not get_node_text(fn) and
+                        fn.getnext() is None and
+                        not (fn.tail or "").strip()):
+                        fn.set("move", "true")
+                for fn in xml.findall(".//fn[@move]"):
+                    parent = fn.getparent()
+                    if parent is not None:
+                        cp = deepcopy(fn)
+                        cp.tail = (cp.tail or "").strip()
+                        cp.attrib.pop("move")
+                        parent.addnext(cp)
+                        parent.remove(fn)
+                    else:
+                        gran_parent = parent.getparent()
+                        if gran_parent is not None:
+                            cp = deepcopy(fn)
+                            cp.attrib.pop("move")
+                            cp.tail = (cp.tail or "").strip()
+                            gran_parent.append(cp)
+                            parent.remove(fn)
+                if len(xml.findall(".//fn[@move]")) == 0:
                     break
-                found = fn.find(".//fn")
-                if found is None:
-                    break
-                current = found
-                last = fn
-                parent = current.getparent()
-                remove_items = []
-                while current is not None:
-                    remove_items.append(current)
-                    current = current.getnext()
-                for removed in remove_items[::-1]:
-                    fn.addnext(deepcopy(removed))
-                for removed in remove_items:
-                    parent.remove(removed)
 
         def transform(self, data):
             raw, xml = data
-            self.fix_move_style_tags_into_fn(xml)
-            self._unnest_fn_nodes_which_are_inside_fn(xml)
+            self.move_fn_out_and_forwards(xml)
+            self.move_fn_out_and_backwards(xml)
             for fn in xml.findall(".//fn"):
                 self.update(fn)
             return data

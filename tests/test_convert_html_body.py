@@ -1285,30 +1285,15 @@ class TestConversionToTableWrap(unittest.TestCase):
 
 class TestConversionToCorresp(unittest.TestCase):
     def test_convert_to_corresp(self):
-        text = """<root><a name="home" id="home"/><a name="back" id="back"/><a href="#home">*</a> Corresponding author</root>"""
-        expected_after_internal_link_as_asterisk_pipe = b"""<root><a name="back" id="back"/>* Corresponding author</root>"""
-        expected_after_anchor_and_internal_link_pipe = b"""<root><fn id="back" fn-type="corresp"/>* Corresponding author</root>"""
+        text = """<root><a name="home" id="home"/><a href="#back">*</a><a name="back" id="back"/><a href="#home">*</a> Corresponding author</root>"""
+        expected = b"""<root><xref ref-type="corresp" rid="back">*</xref><fn id="back" fn-type="corresp"><label>*</label><p>Corresponding author</p></fn></root>"""
 
         xml = etree.fromstring(text)
         html_pl = HTML2SPSPipeline(pid="S1234-56782018000100011")
-        pl = ConvertElementsWhichHaveIdPipeline(html_pl)
-
-        text, xml = pl.RemoveInternalLinksToTextIdentifiedByAsteriskPipe(
-            html_pl).transform((text, xml))
-        self.assertNotIn(b'<a href="#home">*</a>', etree.tostring(xml))
+        pipe = html_pl.ConvertElementsWhichHaveIdPipe(html_pl)
+        text, xml = pipe.transform((text, xml))
         self.assertEqual(
-            etree.tostring(xml), expected_after_internal_link_as_asterisk_pipe
-        )
-
-        text, xml = pl.DeduceAndSuggestConversionPipe(html_pl).transform((text, xml))
-        self.assertIn(
-            b'<a name="back" id="back" xml_tag="corresp" xml_reftype="corresp" xml_id="back"/>',
-            etree.tostring(xml),
-        )
-
-        text, xml = pl.ApplySuggestedConversionPipe(html_pl).transform((text, xml))
-        self.assertEqual(
-            etree.tostring(xml), expected_after_anchor_and_internal_link_pipe
+            etree.tostring(xml), expected
         )
 
 
@@ -1479,15 +1464,6 @@ class TestConvertElementsWhichHaveIdPipeline(unittest.TestCase):
         text, xml = self.elements_which_have_id_ppl.AddNameAndIdToElementAPipe(self.html_pl).transform((text, xml))
         self.assertEqual(etree.tostring(xml), expected)
 
-    def test_pipe_asterisk_in_a_href(self):
-        text = '<root><a name="1a" id="1a"/><a href="#1b"><sup>*</sup></a></root>'
-        expected = b'<root><a name="1a" id="1a"/><sup>*</sup></root>'
-        xml = etree.fromstring(text)
-
-        text, xml = self.elements_which_have_id_ppl.RemoveInternalLinksToTextIdentifiedByAsteriskPipe(self.html_pl
-            ).transform((text, xml))
-        self.assertEqual(etree.tostring(xml), expected)
-
     def test_anchor_and_internal_link_pipe(self):
         text = b"""<root>
             <a href="#anx01" xml_tag="app" xml_reftype="app" xml_id="anx01" xml_label="anexo 1">Anexo 1</a>
@@ -1601,9 +1577,7 @@ class TestConvertElementsWhichHaveIdPipeline(unittest.TestCase):
         </root>"""
         xml = etree.fromstring(text)
         text, xml = self.html_pl.BRPipe().transform((text, xml))
-        print(etree.tostring(xml))
         text, xml = self.elements_which_have_id_pipe.transform((text, xml))
-        print(etree.tostring(xml))
 
         p = xml.findall(".//p")
         self.assertEqual(
@@ -1631,6 +1605,9 @@ class TestConvertElementsWhichHaveIdPipeline(unittest.TestCase):
          A.R.L. Oliveira<sup>II</sup>; M. Silva<sup>III</sup></b></p>
          <p><a name="nt"></a><a href="#tx">*</a>
          Autor correspondente: Carla Ghidini    <br/>
+         <a href="#nt01"><sup>1</sup></a>;
+         <a href="#nt02"><sup>2</sup></a>;
+         <a href="#nt03"><sup>3</sup></a>;
          <a name="nt01"></a>
          <a href="#tx01">1</a> O número de condição de uma matriz <I>M </I>é definido por: &#954;<sub>2</sub>(<i>M</i>) = ||<I>M</I>||<sub>2</sub>||<I>M</I><sup>&#150;1</sup>||<sub>2</sub>.
          <br/>
@@ -2317,52 +2294,21 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertEqual(fn.find(".//p[2]").text, "Email: a@x.org")
         self.assertEqual(fn.find("label").text, "**")
 
-    def test_fix_move_style_tags_into_fn_moves_sup(self):
+    def test_move_fn_out_and_backwards_moves_sup(self):
         text = """<root><sup><fn id="n4"/>****</sup></root>"""
         expected = b"""<root><fn id="n4"/><sup>****</sup></root>"""
         xml = etree.fromstring(text)
-        self.complete_fn_pipe.fix_move_style_tags_into_fn(xml)
+        self.complete_fn_pipe.move_fn_out_and_backwards(xml)
         self.assertEqual(etree.tostring(xml), expected)
 
-    def test_fix_move_style_tags_into_fn_moves_bold(self):
+    def test_move_fn_out_and_backwards_moves_bold(self):
         text = """<root><sup><fn id="n3"/></sup>
         <bold><fn id="n4"/><sup>****</sup></bold></root>"""
         expected = b"""<root><fn id="n3"/><sup/>
         <fn id="n4"/><bold><sup>****</sup></bold></root>"""
         xml = etree.fromstring(text)
-        self.complete_fn_pipe.fix_move_style_tags_into_fn(xml)
+        self.complete_fn_pipe.move_fn_out_and_backwards(xml)
         self.assertEqual(etree.tostring(xml), expected)
-
-    def test__unnest_fn_nodes_which_are_inside_fn(self):
-        text = """<root>
-         <p><fn id="back1"><label>1.</label>
-         <p><italic> Este texto foi apresentado em reuni&#227;o pedag&#243;gica do
-         departamento    de Psicologia da UFPR, no ano de 1993,
-         com a finalidade de subsidiar discuss&#245;es    sobre a reformula&#231;&#227;o
-         curricular do curso de psicologia.  <fn id="back2"/> texto back 2
-         <fn id="back3"/> texto back 3
-         </italic></p></fn></p>
-         </root>"""
-        expected = b"""<root>
-         <p><fn id="back1"><label>1.</label>
-         <p><italic> Este texto foi apresentado em reuni&#227;o pedag&#243;gica do
-         departamento    de Psicologia da UFPR, no ano de 1993,
-         com a finalidade de subsidiar discuss&#245;es    sobre a reformula&#231;&#227;o
-         curricular do curso de psicologia.
-         </italic></p></fn><fn id="back2"/>  texto back 2
-         <fn id="back3"/> texto back 3</p>
-         </root>
-        """
-        xml = etree.fromstring(text)
-        fn = xml.findall(".//fn")
-        self.assertEqual(fn[0].find(".//fn"), fn[1])
-        self.complete_fn_pipe._unnest_fn_nodes_which_are_inside_fn(xml)
-        fn = xml.findall(".//fn")
-
-        self.assertEqual(fn[0].getnext(), fn[1])
-        self.assertEqual(fn[1].getnext(), fn[2])
-        self.assertEqual(fn[2].getnext(), None)
-        self.assertTrue(fn[2].tail.startswith(" texto back 3"))
 
     def test__wrap_content_fn_with_label(self):
         text = """<root><fn><label>1</label>Texto
@@ -2462,3 +2408,22 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         node = xml.find(".//fn")
         self.complete_fn_pipe._create_label(node)
         self.assertEqual(etree.tostring(xml), expected)
+
+    def test__move_fn_out_and_forwards(self):
+        text = """<root><italic> Este texto foi apresentado em reunião pedagógica do departamento    de Psicologia da UFPR, no ano de 1993, com a finalidade de subsidiar discussões    sobre a reformulação curricular do curso de psicologia.
+              <p content-type="break" />
+        		  <fn name="back2" id="back2"/>
+        	  </italic> texto depois de italic </root>
+        """
+        expected = """<root><italic> Este texto foi apresentado em reunião pedagógica do departamento    de Psicologia da UFPR, no ano de 1993, com a finalidade de subsidiar discussões    sobre a reformulação curricular do curso de psicologia.
+              <p content-type="break" />
+        	  </italic><fn name="back2" id="back2"/> texto depois de italic </root>
+        """
+        xml = etree.fromstring(text)
+        self.assertIsNotNone(xml.find(".//italic/fn"))
+        self.assertIsNone(xml.find("./fn"))
+        self.assertEqual(xml.find(".//italic").tail, ' texto depois de italic ')
+        self.complete_fn_pipe.move_fn_out_and_forwards(xml)
+        self.assertIsNone(xml.find(".//italic/fn"))
+        self.assertIsNotNone(xml.find("./fn"))
+        self.assertEqual(xml.find(".//fn").tail, ' texto depois de italic ')
