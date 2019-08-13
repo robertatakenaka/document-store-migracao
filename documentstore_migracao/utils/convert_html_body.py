@@ -391,6 +391,10 @@ class HTML2SPSPipeline(object):
         ]
 
         def parser_node(self, node):
+            if not get_node_text(node) and not node.getchildren():
+                parent = node.getparent()
+                parent.remove(node)
+                return
             _id = node.attrib.pop("id", None)
             node.attrib.clear()
             if _id:
@@ -1092,7 +1096,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.AddNameAndIdToElementAPipe(super_obj=html_pipeline),
             self.RemoveAnchorAndLinksToTextPipe(),
             self.DeduceAndSuggestConversionPipe(super_obj=html_pipeline),
-            self.ValidateSuggestedFnPipe(super_obj=html_pipeline),
             self.ApplySuggestedConversionPipe(super_obj=html_pipeline),
             self.AddAssetInfoToTablePipe(super_obj=html_pipeline),
             self.CreateAssetElementsFromExternalLinkElementsPipe(
@@ -1102,6 +1105,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.APipe(super_obj=html_pipeline),
             self.ImgPipe(super_obj=html_pipeline),
             self.CompleteFnConversionPipe(),
+            self.TargetPipe(super_obj=html_pipeline),
+
         )
 
     def deploy(self, raw):
@@ -1523,11 +1528,14 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self._exclude(items_by_id)
             return data
 
-    class ValidateSuggestedFnPipe(CustomPipe):
+
+    class TargetPipe(CustomPipe):
         """
-        Converte os elementos a, para as tags correspondentes, considerando
-        os valores dos atributos: @xml_tag, @xml_id, @xml_reftype, @xml_label,
-        inseridos por DeduceAndSuggestConversionPipe()
+        Os elementos "a" podem ser convertidos a tabelas, figuras, fórmulas,
+        anexos, notas de rodapé etc. Por padrão, até este ponto, todos os
+        elementos não identificados como tabelas, figuras, fórmulas,
+        anexos, são identificados como "fn" (notas de rodapé). No entanto,
+        podem ser apenas "target"
         """
         def _remove_a(self, a_name, a_href_items):
             _remove_element_or_comment(a_name, True)
@@ -1548,12 +1556,26 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
         def transform(self, data):
             raw, xml = data
-            self.super_obj.document.xmltree = xml
-            for name, a_name_and_hrefs in self.super_obj.document.a_names.items():
-                a_name, a_hrefs = a_name_and_hrefs
-                if len(a_hrefs) == 0 and a_name.attrib.get("xml_tag") == "fn":
-                    a_name.attrib["xml_tag"] = "target"
-                    a_name.attrib["xml_reftype"] = "target"
+
+            for fn in xml.findall(".//fn"):
+                rid = fn.attrib.get("id")
+                if fn.find("label") is None:
+                    fn_text = get_node_text(fn)
+                    if len(xml.findall(".//xref[@rid='{}']".format(rid))) == 0:
+                        fn.tag = "target"
+                    for xref in xml.findall(".//xref[@rid='{}']".format(rid)):
+                        xref_text = get_node_text(xref)
+                        xref_parent_text = get_node_text(xref.getparent())
+                        if fn_text == xref_text == xref_parent_text:
+                            print("")
+                            print(etree.tostring(fn))
+                            print(etree.tostring(xref))
+                            xref.set("ref-type", "other")
+                            fn.tag = "target"
+                            print("")
+                            print(etree.tostring(fn))
+                            print(etree.tostring(xref))
+                            print("--")
             return data
 
     class ApplySuggestedConversionPipe(CustomPipe):

@@ -1419,6 +1419,7 @@ class Test_HTML2SPSPipeline(unittest.TestCase):
                 self.assertIn("época", resultado_unicode)
                 self.assertIn("&lt;", resultado_unicode)
 
+
 class TestHTMLEscapingPipe(unittest.TestCase):
 
     def test_pipe(self):
@@ -2427,3 +2428,48 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertIsNone(xml.find(".//italic/fn"))
         self.assertIsNotNone(xml.find("./fn"))
         self.assertEqual(xml.find(".//fn").tail, ' texto depois de italic ')
+
+
+class TestTarget(unittest.TestCase):
+    def setUp(self):
+        self.html_pl = HTML2SPSPipeline(pid="S1234-56782018000100011")
+        self.elements_which_have_id_pipe = self.html_pl.ConvertElementsWhichHaveIdPipe(
+            self.html_pl)
+        self.elements_which_have_id_ppl = ConvertElementsWhichHaveIdPipeline(self.html_pl)
+
+    def test_menu(self):
+        html = """<root>
+        <a name="menu"></a>
+        <hr/>
+        <ul>
+        <li><b><a href="#item1">Introdução</a></b></li>
+        <li><b><a href="#item2">Métodos</a></b></li>
+        <li><b><a href="#item3">Resultados</a></b></li>
+        <li><b><a href="#item4">Discussão</a></b></li>
+        <li><b><a href="#ref">Referências</a></b></li>
+        </ul>
+        <p>
+        <b><a name="item1"></a>
+        <a href="#menu">Introdução</a></b>
+        </p>
+        <p>A relação de causa e efeito no processo de
+        transmissão de doenças relacionadas</p>
+        </root>
+        """
+        text = """<root><hr/>
+        <ul><li>
+        <b><xref ref-type="fn" rid="item1">Introdu&#231;&#227;o</xref></b></li>
+        <li><b>Métodos</b></li>
+        <li><b>Resultados</b></li>
+        <li><b>Discussão</b></li>
+        <li><b>
+        <xref rid="BReferências" ref-type="bibr">Referências</xref></b></li>
+        </ul>
+        <p><b><fn id="item1"><p>Introdução</p></fn></b></p>
+        <p>A relação de causa e efeito no processo de transmissão de doenças
+        relacionadas</p></root>
+        """
+        xml = etree.fromstring(text)
+        text, xml = self.elements_which_have_id_ppl.TargetPipe(
+            self.html_pl).transform((text, xml))
+        print(etree.tostring(xml))
