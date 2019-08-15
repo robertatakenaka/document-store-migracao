@@ -163,7 +163,7 @@ class TestHTML2SPSPipeline(unittest.TestCase):
         raw, transformed = self._transform(text, self.pipeline.PPipe())
 
         self.assertEqual(
-            etree.tostring(transformed), b'<root><p id="y">bla</p><p/></root>'
+            etree.tostring(transformed), b'<root><p id="y">bla</p></root>'
         )
 
     def test_pipe_div(self):
@@ -2437,7 +2437,7 @@ class TestTarget(unittest.TestCase):
             self.html_pl)
         self.elements_which_have_id_ppl = ConvertElementsWhichHaveIdPipeline(self.html_pl)
 
-    def test_menu(self):
+    def test_target_pipe_for_menu_items(self):
         html = """<root>
         <a name="menu"></a>
         <hr/>
@@ -2472,4 +2472,17 @@ class TestTarget(unittest.TestCase):
         xml = etree.fromstring(text)
         text, xml = self.elements_which_have_id_ppl.TargetPipe(
             self.html_pl).transform((text, xml))
-        print(etree.tostring(xml))
+        self.assertIsNotNone(xml.find(".//target[@id='item1']"))
+        self.assertIsNotNone(xml.find(".//xref[@rid='item1']"))
+        self.assertIsNotNone(xml.find(".//xref[@ref-type='other']"))
+
+    def test_target_pipe_converts_fn_to_target_if_fn_is_not_the_first_item_in_parent_and_there_is_no_xref_to_it(self):
+
+        text = """<root>
+        <p><b>Texto texto texto <fn id="item1"><label>a</label></fn></b></p>
+        </root>
+        """
+        xml = etree.fromstring(text)
+        text, xml = self.elements_which_have_id_ppl.TargetPipe(
+            self.html_pl).transform((text, xml))
+        self.assertIsNotNone(xml.find(".//target[@id='item1']"))

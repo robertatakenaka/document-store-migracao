@@ -1440,8 +1440,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
             for name, a_name_and_hrefs in a_names.items():
                 new_id = None
                 a_name, a_hrefs = a_name_and_hrefs
-                print("")
-                print(etree.tostring(a_name))
                 complete, incomplete = self._classify_nodes(a_hrefs)
                 if complete:
                     text, tag, reftype, new_id = complete
@@ -1456,7 +1454,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
                         new_id = gera_id(name, self.super_obj.index_body)
                         text = ""
                 if new_id:
-                    print(tag, reftype, new_id, text)
                     self._update(a_name, tag, reftype, new_id, text)
                     for node in incomplete:
                         self._update(node, tag, reftype, new_id, text)
@@ -1506,6 +1503,12 @@ class ConvertElementsWhichHaveIdPipeline(object):
         também das notas para o texto. Este pipe é para remover as
         âncoras e referências cruzadas das notas para o texto.
         """
+        def _fix_a_href(self, xml):
+            for a in xml.findall(".//a[@name]"):
+                name = a.attrib.get("name")
+                for a_href in xml.findall(".//a[@href='{}']".format(name)):
+                    a_href.set("href", "#" + name)
+
         def _identify_order(self, xml):
             items_by_id = {}
             for a in xml.findall(".//a"):
@@ -1525,14 +1528,15 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 if len(repeated) > 1:
                     for n in repeated[1:]:
                         nodes.remove(n)
+                        parent = n.getparent()
+                        parent.remove(n)
                 if len(nodes) >= 2 and nodes[0].attrib.get("name"):
                     for n in nodes:
                         _remove_element_or_comment(n)
 
-
-
         def transform(self, data):
             raw, xml = data
+            self._fix_a_href(xml)
             items_by_id = self._identify_order(xml)
             self._exclude(items_by_id)
             return data
@@ -1546,32 +1550,21 @@ class ConvertElementsWhichHaveIdPipeline(object):
         anexos, são identificados como "fn" (notas de rodapé). No entanto,
         podem ser apenas "target"
         """
-        def _remove_a(self, a_name, a_href_items):
-            _remove_element_or_comment(a_name, True)
-            for a_href in a_href_items:
-                _remove_element_or_comment(a_href, True)
-
-        def _update_a_name(self, node, new_id, new_tag):
-            _name = node.attrib.get("name")
-            node.attrib.clear()
-            node.set("id", new_id)
-            if new_tag == "symbol":
-                node.set("symbol", _name)
-                new_tag = "fn"
-            elif new_tag == "corresp":
-                node.set("fn-type", "corresp")
-                new_tag = "fn"
-            node.tag = new_tag
-
         def transform(self, data):
             raw, xml = data
-
             for fn in xml.findall(".//fn"):
                 rid = fn.attrib.get("id")
+                if len(xml.findall(".//xref[@rid='{}']".format(rid))) == 0:
+                    parent = fn.getparent()
+                    parent_text = (parent.text or "").strip()
+                    previous = fn.getprevious()
+                    previous_text = "" if previous is None else (previous.tail or "").strip()
+                    if parent_text or previous_text:
+                        fn.tag = "target"
+                        etree.strip_tags(fn, "label")
+                        etree.strip_tags(fn, "p")
                 if fn.find("label") is None:
                     fn_text = get_node_text(fn)
-                    if len(xml.findall(".//xref[@rid='{}']".format(rid))) == 0:
-                        fn.tag = "target"
                     for xref in xml.findall(".//xref[@rid='{}']".format(rid)):
                         xref_text = get_node_text(xref)
                         xref_parent_text = get_node_text(xref.getparent())
@@ -1625,6 +1618,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     reftype = a_name.attrib.get("xml_reftype")
                     self._update_a_name(a_name, new_id, new_tag)
                     self._update_a_href_items(a_hrefs, new_id, reftype)
+                else:
+                    self._remove_a(a_name, a_hrefs)
             return data
 
     class APipe(CustomPipe):
