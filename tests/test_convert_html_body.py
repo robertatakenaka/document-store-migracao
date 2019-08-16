@@ -158,6 +158,27 @@ class TestHTML2SPSPipeline(unittest.TestCase):
             b'<root><p content-type="break">bla</p><p content-type="break"> continua outra linha</p><p baljlba="1"/><td><break/></td><sec/></root>',
         )
 
+    def test_pipe_br_2(self):
+        text = """<root><p>Artigo baseado    na dissertação de mestrado de C
+        Franca apresentada à Universidade    de Pernambuco (UPE), em 2006.
+        <br/>
+        <a name="back1"></a>
+        <a href="#top1">*</a>
+        Ministério das Cidades. Departamento    Nacional de Trânsito - DENATRAN.
+        Anuário estatístico de    acidentes de trânsito – 2002 [acesso em 7 jul 2006].
+        Disponível    em:
+        <a href="http://www.denatran.gov.br/acidentes.htm" target="_blank">http://www.denatran.gov.br/acidentes.htm</a>
+        <br/>Fim</p></root>"""
+        raw, transformed = self._transform(text, self.pipeline.BRPipe())
+        print(etree.tostring(transformed))
+
+        p = transformed.findall(".//p")
+        self.assertIn("Artigo baseado", p[0].text)
+        self.assertIsNotNone(p[1].find("a[@name='back1']"))
+        self.assertIsNotNone(p[1].find("a[@href='#top1']"))
+        self.assertIsNotNone(p[1].find("a[@href='http://www.denatran.gov.br/acidentes.htm']"))
+        self.assertEqual(p[2].text, "Fim")
+
     def test_pipe_p(self):
         text = '<root><p align="x" id="y">bla</p><p baljlba="1"/></root>'
         raw, transformed = self._transform(text, self.pipeline.PPipe())
