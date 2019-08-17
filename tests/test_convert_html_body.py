@@ -150,14 +150,6 @@ class TestHTML2SPSPipeline(unittest.TestCase):
             b'<root><p content-type="h3">Titulo 3</p></root>',
         )
 
-    def test_pipe_br(self):
-        text = '<root><p align="x">bla<br/> continua outra linha</p><p baljlba="1"/><td><br/></td><sec><br/></sec></root>'
-        raw, transformed = self._transform(text, self.pipeline.BRPipe())
-        self.assertEqual(
-            etree.tostring(transformed),
-            b'<root><p content-type="break">bla</p><p content-type="break"> continua outra linha</p><p baljlba="1"/><td><break/></td><sec/></root>',
-        )
-
     def test_pipe_p(self):
         text = '<root><p align="x" id="y">bla</p><p baljlba="1"/></root>'
         raw, transformed = self._transform(text, self.pipeline.PPipe())
@@ -2249,45 +2241,6 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertIsNone(fn.find("p/italic").tail)
         self.assertIsNone(fn.find("label"))
 
-    def test__convert_elements_which_have_id_pipe_creates_fn_with_some_paragraphs(self):
-        text = """<root>
-          <p><fn id="nt"></fn>
-          <bold>Correspondence to:</bold>
-          <br/>
-          Maria Auxiliadora Prolungatti Cesar
-          <br/>
-          Serviço de Clínica Cirúrgica do Hospital Universitário de Taubaté
-          <br/>
-          Avenida Granadeiro Guimarães, 270
-          <br/>
-          CEP: 12100-000 – Taubaté (SP), Brazil.
-          <br/>
-          E mail:
-          <a href="mailto:prolungatti@uol.com.br">prolungatti@uol.com.br</a>
-          </p>
-        </root>"""
-        xml = etree.fromstring(text)
-        text, xml = self.html_pl.BRPipe().transform((text, xml))
-        text, xml = self.html_pl.ConvertElementsWhichHaveIdPipe(
-            self.html_pl).transform((text, xml))
-        p = xml.findall(".//p")
-        self.assertEqual(
-            xml.find(".//fn/label/bold").text, "Correspondence to:")
-        self.assertEqual(
-            p[0].text.strip(),
-            "Maria Auxiliadora Prolungatti Cesar")
-        self.assertEqual(
-            p[1].text.strip(),
-            "Serviço de Clínica Cirúrgica do Hospital Universitário de Taubaté")
-        self.assertEqual(
-            p[2].text.strip(),
-            "Avenida Granadeiro Guimarães, 270")
-        self.assertEqual(
-            p[3].text.strip(),
-            "CEP: 12100-000 – Taubaté (SP), Brazil.")
-        self.assertEqual(
-            p[5].find("email").text, "prolungatti@uol.com.br")
-
     def test_fn_list(self):
         text = """
          <root>
@@ -2343,3 +2296,83 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertEqual(
             xml.find(".//fn/p/email").text, "chrisg@vortex.ufrgs.br")
         self.assertIn("Corresponding author", xml.find(".//fn/p").text, "*")
+
+
+class TestHTML2SPSPipelineBRPipe(unittest.TestCase):
+    def setUp(self):
+        self.pipeline = HTML2SPSPipeline(pid="S1234-56782018000100011")
+        self.pipe = self.pipeline.BRPipe()
+
+    def test_br_pipe_convert_br_into_p(self):
+        text = """<root><p>Texto 1
+        <br/>Texto 2 <italic>italico dentro de texto 2</italic>
+        <br/>Texto 3 <bold>destaque dentro de tres</bold> ainda em tres
+        <br/><a href="#1"/>Texto 4</p></root>"""
+        expected = """<root><p>Texto 1
+        <p content-type="break">Texto 2 <italic>italico dentro de texto 2</italic>
+        </p><p content-type="break">Texto 3 <bold>destaque dentro de tres</bold> ainda em tres
+        </p><p content-type="break"><a href="#1"/>Texto 4</p></p></root>"""
+        xml = etree.fromstring(text)
+        node = xml.find(".//p")
+        self.pipe._convert_br_into_p_content_type_break_with_content(node)
+        p = xml.findall(".//p/p")
+        self.assertEqual(len(p), 3)
+        self.assertIn("Texto 2", p[0].text)
+        self.assertIn("Texto 3", p[1].text)
+        self.assertIn("Texto 4", p[2].find("a").tail)
+        self.assertEqual("italico dentro de texto 2", p[0].find("italic").text)
+        self.assertEqual("destaque dentro de tres", p[1].find("bold").text)
+        self.assertIn(" ainda em tres", p[1].find("bold").tail)
+
+    def test_br_pipe_transform(self):
+        text = """<root><p>Texto 1
+        <br/>Texto 2 <italic>italico dentro de texto 2</italic>
+        <br/>Texto 3 <bold>destaque dentro de tres</bold> ainda em tres
+        <br/><a href="#1"/>Texto 4</p></root>"""
+        expected = """<root>Texto 1
+        <p content-type="break">Texto 2 <italic>italico dentro de texto 2</italic>
+        </p><p content-type="break">Texto 3 <bold>destaque dentro de tres</bold> ainda em tres
+        </p><p content-type="break"><a href="#1"/>Texto 4</p></root>"""
+        xml = etree.fromstring(text)
+        text, xml = self.pipe.transform((text, xml))
+        p = xml.findall(".//p")
+        self.assertEqual(len(p), 4)
+
+    def test_br_pipe_transform_for_corresp_footnote(self):
+        text = """<root>
+          <p><a id="nt"/>
+          <bold>Correspondence to:</bold>
+          <br/>
+          Maria Auxiliadora Prolungatti Cesar
+          <br/>
+          Serviço de Clínica Cirúrgica do Hospital Universitário de Taubaté
+          <br/>
+          Avenida Granadeiro Guimarães, 270
+          <br/>
+          CEP: 12100-000 – Taubaté (SP), Brazil.
+          <br/>
+          E mail:
+          <a href="mailto:prolungatti@uol.com.br">prolungatti@uol.com.br</a>
+          </p>
+        </root>"""
+        expected = """<root>
+          <p><a id="nt"/>
+          <bold>Correspondence to:</bold>
+          <p content-type="break">
+          Maria Auxiliadora Prolungatti Cesar
+          </p><p content-type="break">
+          Serviço de Clínica Cirúrgica do Hospital Universitário de Taubaté
+          </p><p content-type="break">
+          Avenida Granadeiro Guimarães, 270
+          </p><p content-type="break">
+          CEP: 12100-000 – Taubaté (SP), Brazil.
+          </p><p content-type="break">
+          E mail:
+          <a href="mailto:prolungatti@uol.com.br">prolungatti@uol.com.br</a>
+          </p></p>
+        </root>"""
+        xml = etree.fromstring(text)
+        text, xml = self.pipe.transform((text, xml))
+        p = xml.findall(".//p")
+        self.assertEqual(len(p), 6)
+        self.assertEqual(len(xml.findall(".//p[@content-type='break']")), 5)

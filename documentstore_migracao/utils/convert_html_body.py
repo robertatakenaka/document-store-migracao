@@ -310,29 +310,33 @@ class HTML2SPSPipeline(object):
             "trans-title",
         ]
 
+        def _convert_br_into_p_content_type_break_with_content(self, node):
+            """
+            <root><p>texto <br/> texto 1</p></root>
+            <root><p>texto <p content-type= "break"> texto 1</p></p></root>
+            """
+            p = None
+            for child in node.getchildren():
+                if child.tag == "br":
+                    child.tag = "p"
+                    child.set("content-type", "break")
+                    child.text = child.tail
+                    child.tail = ""
+                    p = child
+                elif p is not None:
+                    p.append(child)
+
         def transform(self, data):
+            print("")
             raw, xml = data
             changed = False
-            nodes = xml.findall("*[br]")
+            nodes = xml.findall(".//*[br]")
             for node in nodes:
                 if node.tag in self.ALLOWED_IN:
                     for br in node.findall("br"):
                         br.tag = "break"
-                elif node.tag == "p":
-                    if node.text:
-                        p = etree.Element("p")
-                        p.set("content-type", "break")
-                        p.text = node.text
-                        node.insert(0, p)
-                        node.text = ""
-                    for br in node.findall("br"):
-                        br.tag = "p"
-                        br.set("content-type", "break")
-                        if br.tail:
-                            br.text = br.tail
-                            br.tail = ""
-                    _remove_element_or_comment(node)
-
+                else:
+                    self._convert_br_into_p_content_type_break_with_content(node)
             etree.strip_tags(xml, "br")
             return data
 
