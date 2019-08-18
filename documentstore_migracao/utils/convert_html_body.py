@@ -1085,8 +1085,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.SetupPipe(),
             self.RemoveThumbImgPipe(),
             self.AddNameAndIdToElementAPipe(super_obj=html_pipeline),
-            self.DeduceAndSuggestConversionPipe(super_obj=html_pipeline),
             self.RemoveAnchorAndLinksToTextPipe(),
+            self.DeduceAndSuggestConversionPipe(super_obj=html_pipeline),
             self.ApplySuggestedConversionPipe(super_obj=html_pipeline),
             self.AddAssetInfoToTablePipe(super_obj=html_pipeline),
             self.CreateAssetElementsFromExternalLinkElementsPipe(
