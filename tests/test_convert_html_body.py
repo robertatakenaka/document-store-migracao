@@ -1538,12 +1538,16 @@ class TestConvertElementsWhichHaveIdPipeline(unittest.TestCase):
 
     def test_pipe_remove_anchor_and_links_to_text_removes_some_elements(self):
         text = """<root>
-        <a href="#nota" xml_tag="xref" xml_id="nota" xml_label="1" xml_reftype="fn">1</a>
-        <a name="texto" xml_tag="fn" xml_id="texto" xml_reftype="fn"/>
-        <a name="nota"  xml_tag="fn" xml_id="nota" xml_reftype="fn"/>
-        <a href="#texto" xml_tag="xref" xml_id="texto" xml_reftype="xref">1</a> Nota bla bla
+        <a href="#nota">1</a>
+        <a name="texto"/>
+        <a name="nota"/>
+        <a name="nota"/>
+        <a href="#texto">1</a> Nota bla bla
         </root>"""
         raw, transformed = text, etree.fromstring(text)
+        nodes = transformed.findall(".//a[@name='nota']")
+        self.assertEqual(len(nodes), 2)
+
         raw, transformed = self.pl.RemoveAnchorAndLinksToTextPipe().transform((raw, transformed))
         nodes = transformed.findall(".//a[@name='nota']")
         self.assertEqual(len(nodes), 1)

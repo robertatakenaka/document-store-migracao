@@ -1082,8 +1082,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.SetupPipe(),
             self.RemoveThumbImgPipe(),
             self.AddNameAndIdToElementAPipe(super_obj=html_pipeline),
-            self.DeduceAndSuggestConversionPipe(super_obj=html_pipeline),
             self.RemoveAnchorAndLinksToTextPipe(),
+            self.DeduceAndSuggestConversionPipe(super_obj=html_pipeline),
             self.ApplySuggestedConversionPipe(super_obj=html_pipeline),
             self.AddAssetInfoToTablePipe(super_obj=html_pipeline),
             self.CreateAssetElementsFromExternalLinkElementsPipe(
@@ -1512,23 +1512,40 @@ class ConvertElementsWhichHaveIdPipeline(object):
         também das notas para o texto. Este pipe é para remover as
         âncoras e referências cruzadas das notas para o texto.
         """
+        def _fix_a_href(self, xml):
+            for a in xml.findall(".//a[@name]"):
+                name = a.attrib.get("name")
+                for a_href in xml.findall(".//a[@href='{}']".format(name)):
+                    a_href.set("href", "#" + name)
+
         def _identify_order(self, xml):
             items_by_id = {}
-            for a in xml.findall(".//a[@xml_tag]"):
-                if a.attrib.get("xml_tag") == "fn":
-                    _id = a.attrib.get("xml_id")
+            for a in xml.findall(".//a"):
+                _id = a.attrib.get("name")
+                if not _id:
+                    href = a.attrib.get("href")
+                    if href and href.startswith("#"):
+                        _id = href[1:]
+                if _id:
                     items_by_id[_id] = items_by_id.get(_id, [])
                     items_by_id[_id].append(a)
             return items_by_id
 
         def _exclude(self, items_by_id):
             for _id, nodes in items_by_id.items():
+                repeated = [n for n in nodes if n.attrib.get("name")]
+                if len(repeated) > 1:
+                    for n in repeated[1:]:
+                        nodes.remove(n)
+                        parent = n.getparent()
+                        parent.remove(n)
                 if len(nodes) >= 2 and nodes[0].attrib.get("name"):
                     for n in nodes:
                         _remove_element_or_comment(n)
 
         def transform(self, data):
             raw, xml = data
+            self._fix_a_href(xml)
             items_by_id = self._identify_order(xml)
             self._exclude(items_by_id)
             return data
