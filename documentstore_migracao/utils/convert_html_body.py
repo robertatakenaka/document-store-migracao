@@ -129,7 +129,7 @@ class HTML2SPSPipeline(object):
             self.DeprecatedHTMLTagsPipe(),
             self.RemoveImgSetaPipe(),
             self.RemoveDuplicatedIdPipe(),
-            self.RemoveExcedingStyleTagsPipe(),
+            self.RemoveExceedingStyleTagsPipe(),
             self.RemoveEmptyPipe(),
             self.RemoveStyleAttributesPipe(),
             self.RemoveCommentPipe(),
@@ -214,16 +214,31 @@ class HTML2SPSPipeline(object):
 
             return data
 
-    class RemoveExcedingStyleTagsPipe(plumber.Pipe):
-        TAGS = ("b", "i", "em", "strong", "u")
+    class RemoveExceedingStyleTagsPipe(plumber.Pipe):
+        TAGS = ("b", "i", "em", "strong", "u", "sup")
+
+        def _switch_tags(self, node):
+            children = node.getchildren()
+            if (not (children[0].tail or "").strip() and
+                    not (node.text or "").strip()):
+                children[0].tag = node.tag
+                node.tag = "p"
+                for name, value in children[0].attrib.items():
+                    node.set(name, value)
+                    children[0].attrib.pop(name)
 
         def transform(self, data):
             raw, xml = data
             for tag in self.TAGS:
                 for node in xml.findall(".//" + tag):
                     text = get_node_text(node)
+                    children = node.getchildren()
                     if not text:
                         node.tag = "STRIPTAG"
+                    elif node.find(".//{}".format(tag)) is not None:
+                        node.tag = "STRIPTAG"
+                    elif len(children) == 1 and children[0].tag == "p":
+                        self._switch_tags(node)
             etree.strip_tags(xml, "STRIPTAG")
             return data
 
