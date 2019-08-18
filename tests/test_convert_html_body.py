@@ -1460,7 +1460,7 @@ class TestConvertElementsWhichHaveIdPipeline(unittest.TestCase):
 
     def test_fix_element_a(self):
         text = """<root><a name="_ftnref19" href="#_ftn2" id="_ftnref19"><sup>1</sup></a></root>"""
-        expected = b"""<root><a name="_ftnref19" id="_ftnref19"/><a href="#_ftn2"><sup>1</sup></a></root>"""
+        expected = b"""<root><a name="xftnref19" id="xftnref19"/><a href="#xftn2"><sup>1</sup></a></root>"""
         xml = etree.fromstring(text)
         text, xml = self.pl.AddNameAndIdToElementAPipe(self.html_pl).transform((text, xml))
         self.assertEqual(etree.tostring(xml), expected)
