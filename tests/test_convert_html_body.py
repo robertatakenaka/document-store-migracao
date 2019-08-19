@@ -1286,18 +1286,17 @@ class TestConversionToTableWrap(unittest.TestCase):
 class TestConversionToCorresp(unittest.TestCase):
     def test_convert_to_corresp(self):
         text = """<root><a name="home" id="home"/><a name="back" id="back"/><a href="#home">*</a> Corresponding author</root>"""
-        expected_after_internal_link_as_asterisk_pipe = b"""<root><a name="back" id="back"/>* Corresponding author</root>"""
-        expected_after_anchor_and_internal_link_pipe = b"""<root><fn id="back" fn-type="corresp"/>* Corresponding author</root>"""
+        expected_1 = b"""<root><a name="back" id="back"/>* Corresponding author</root>"""
+        expected_2 = b"""<root><fn id="back" fn-type="corresp"/>* Corresponding author</root>"""
 
         xml = etree.fromstring(text)
         html_pl = HTML2SPSPipeline(pid="S1234-56782018000100011")
         pl = ConvertElementsWhichHaveIdPipeline(html_pl)
 
-        text, xml = pl.RemoveInternalLinksToTextIdentifiedByAsteriskPipe(
-            html_pl).transform((text, xml))
+        text, xml = pl.RemoveAnchorAndLinksToTextPipe().transform((text, xml))
         self.assertNotIn(b'<a href="#home">*</a>', etree.tostring(xml))
         self.assertEqual(
-            etree.tostring(xml), expected_after_internal_link_as_asterisk_pipe
+            etree.tostring(xml), expected_1
         )
 
         text, xml = pl.DeduceAndSuggestConversionPipe(html_pl).transform((text, xml))
@@ -1308,7 +1307,7 @@ class TestConversionToCorresp(unittest.TestCase):
 
         text, xml = pl.ApplySuggestedConversionPipe(html_pl).transform((text, xml))
         self.assertEqual(
-            etree.tostring(xml), expected_after_anchor_and_internal_link_pipe
+            etree.tostring(xml), expected_2
         )
 
 
@@ -1477,15 +1476,6 @@ class TestConvertElementsWhichHaveIdPipeline(unittest.TestCase):
         expected = b"""<root><a name="xftnref19" id="xftnref19"/><a href="#xftn2"><sup>1</sup></a></root>"""
         xml = etree.fromstring(text)
         text, xml = self.pl.AddNameAndIdToElementAPipe(self.html_pl).transform((text, xml))
-        self.assertEqual(etree.tostring(xml), expected)
-
-    def test_pipe_asterisk_in_a_href(self):
-        text = '<root><a name="1a" id="1a"/><a href="#1b"><sup>*</sup></a></root>'
-        expected = b'<root><a name="1a" id="1a"/><sup>*</sup></root>'
-        xml = etree.fromstring(text)
-
-        text, xml = self.pl.RemoveInternalLinksToTextIdentifiedByAsteriskPipe(self.html_pl
-            ).transform((text, xml))
         self.assertEqual(etree.tostring(xml), expected)
 
     def test_anchor_and_internal_link_pipe(self):
