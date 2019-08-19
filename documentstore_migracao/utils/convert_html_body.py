@@ -1700,7 +1700,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     node.set("ref-type", ref_type)
                     ref_node.attrib.pop("xref_id")
                 else:
-                    # nao existe a[@name=rid]
+                    # nao existe a[@name=rid], FIXME, pode ser referencia bibl.
                     _remove_element_or_comment(node, xref_name == "top")
 
         def parser_node(self, node):
