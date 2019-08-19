@@ -133,7 +133,6 @@ class HTML2SPSPipeline(object):
             self.RemoveEmptyPipe(),
             self.RemoveStyleAttributesPipe(),
             self.RemoveCommentPipe(),
-            self.BRPipe(),
             self.PPipe(),
             self.DivPipe(),
             self.LiPipe(),
@@ -147,6 +146,8 @@ class HTML2SPSPipeline(object):
             self.BPipe(),
             self.StrongPipe(),
             self.ConvertElementsWhichHaveIdPipe(super_obj=self),
+            self.BRPipe(),
+            
             self.TdCleanPipe(),
             self.TableCleanPipe(),
             self.BlockquotePipe(),
@@ -325,30 +326,42 @@ class HTML2SPSPipeline(object):
             "trans-title",
         ]
 
+        def _convert_br_into_p_content_type_break_with_content(self, node):
+            """
+            <root><p>texto <br/> texto 1</p></root>
+            <root><p><p content-type= "break">texto </p><p content-type= "break"> texto 1</p></p></root>
+            """
+            p = None
+            if node.text:
+                p = etree.Element("p")
+                p.set("content-type", "break")
+                p.text = node.text
+            for child in node.getchildren():
+                if child.tag == "br":
+                    if p is not None:
+                        node.append(p)
+                    child.tag = "p"
+                    child.set("content-type", "break")
+                    child.text = child.tail
+                    child.tail = ""
+                    p = child
+                elif p is not None:
+                    p.append(child)
+
         def transform(self, data):
             raw, xml = data
             changed = False
-            nodes = xml.findall("*[br]")
+            nodes = xml.findall(".//*[br]")
             for node in nodes:
                 if node.tag in self.ALLOWED_IN:
                     for br in node.findall("br"):
                         br.tag = "break"
-                elif node.tag == "p":
-                    if node.text:
-                        p = etree.Element("p")
-                        p.set("content-type", "break")
-                        p.text = node.text
-                        node.insert(0, p)
-                        node.text = ""
-                    for br in node.findall("br"):
-                        br.tag = "p"
-                        br.set("content-type", "break")
-                        if br.tail:
-                            br.text = br.tail
-                            br.tail = ""
-                    _remove_element_or_comment(node)
+                else:
+                    if node.tag == "p":
+                        node.tag = "REMOVE_P"
+                    self._convert_br_into_p_content_type_break_with_content(node)
+            etree.strip_tags(xml, "REMOVE_P")
 
-            etree.strip_tags(xml, "br")
             return data
 
     class PPipe(plumber.Pipe):
