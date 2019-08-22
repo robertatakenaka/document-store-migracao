@@ -2378,24 +2378,44 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertEqual(xml.find(".//fn").tail, ' texto depois de italic ')
 
 
+class TestHTML2SPSPipelineBR2PPipe(unittest.TestCase):
+    def setUp(self):
+        self.pipeline = HTML2SPSPipeline(pid="S1234-56782018000100011")
+        self.pipe = self.pipeline.BR2PPipe()
+
+    def test_br_to_p_pipe_converts_each_br_into_one_p_and_removes_root_p(self):
+        text = """<root><sec><p>Texto 1
+        <br/>Texto 2 <italic>italico dentro de texto 2</italic>
+        <br/>Texto 3 <bold>destaque dentro de tres</bold> ainda em tres
+        <br/><a href="#1"/>Texto 4</p></sec></root>"""
+        expected = """<root><sec><p>Texto 1</p>
+        <p>Texto 2 <italic>italico dentro de texto 2</italic>
+        </p><p>Texto 3 <bold>destaque dentro de tres</bold> ainda em tres
+        </p><p><a href="#1"/>Texto 4</p></sec></root>"""
+        xml = etree.fromstring(text)
+        text, xml = self.pipe.transform((text, xml))
+        p = xml.findall("./sec//p")
+        self.assertEqual(len(p), 4)
+
+    def test_br_to_p_pipe_converts_each_br_into_one_p_and_keep_root_sec(self):
+        text = """<root><sec>Texto 1
+        <br/>Texto 2 <italic>italico dentro de texto 2</italic>
+        <br/>Texto 3 <bold>destaque dentro de tres</bold> ainda em tres
+        <br/><a href="#1"/>Texto 4</sec></root>"""
+        expected = """<root><sec><p content-type="break">Texto 1</p>
+        <p content-type="break">Texto 2 <italic>italico dentro de texto 2</italic>
+        </p><p content-type="break">Texto 3 <bold>destaque dentro de tres</bold> ainda em tres
+        </p><p content-type="break"><a href="#1"/>Texto 4</p></sec></root>"""
+        xml = etree.fromstring(text)
+        text, xml = self.pipe.transform((text, xml))
+        p = xml.findall(".//sec/p[@content-type]")
+        self.assertEqual(len(p), 4)
+
+
 class TestHTML2SPSPipelineBRPipe(unittest.TestCase):
     def setUp(self):
         self.pipeline = HTML2SPSPipeline(pid="S1234-56782018000100011")
         self.pipe = self.pipeline.BRPipe()
-
-    def test_br_pipe_transforms_p_br_into_p_content_type_break(self):
-        text = """<root><p>Texto 1
-        <br/>Texto 2 <italic>italico dentro de texto 2</italic>
-        <br/>Texto 3 <bold>destaque dentro de tres</bold> ainda em tres
-        <br/><a href="#1"/>Texto 4</p></root>"""
-        expected = """<root><p content-type="break">Texto 1</p>
-        <p content-type="break">Texto 2 <italic>italico dentro de texto 2</italic>
-        </p><p content-type="break">Texto 3 <bold>destaque dentro de tres</bold> ainda em tres
-        </p><p content-type="break"><a href="#1"/>Texto 4</p></root>"""
-        xml = etree.fromstring(text)
-        text, xml = self.pipe.transform((text, xml))
-        p = xml.findall(".//p")
-        self.assertEqual(len(p), 4)
 
     def test_br_pipe_transforms_br_into_break(self):
         text = '<root><td><br/></td></root>'
@@ -2406,41 +2426,55 @@ class TestHTML2SPSPipelineBRPipe(unittest.TestCase):
             b'<root><td><break/></td></root>',
         )
 
-    def test_br_pipe_removes_br(self):
-        text = '<root><sec><br/>tail</sec></root>'
+    def test_br_pipe_does_not_transform_br_into_break(self):
+        text = '<root><p><br/></p></root>'
         xml = etree.fromstring(text)
         text, xml = self.pipe.transform((text, xml))
         self.assertEqual(
             etree.tostring(xml),
-            b'<root><sec><p content-type="break">tail</p></sec></root>',
+            b'<root><p><br/></p></root>',
         )
 
-    def test__convert_br_into_p_creates_p_with_content_type_break(self):
-        text = """<root><bold>Address for correspondence: <br/></bold></root>"""
-        xml = etree.fromstring(text)
-        node = xml.find(".//bold")
-        self.pipe._convert_br_into_p(node)
-        self.assertEqual(
-            etree.tostring(xml),
-            b'<root><bold><p content-type="break">Address for correspondence: </p></bold></root>',
-        )
 
-    def test__convert_br_into_p_creates_p(self):
-        text = """<root><p><bold>Address for correspondence</bold>: <br/> texto 1 <br/> texto 2 <email>x@x.org</email></p></root>"""
-        xml = etree.fromstring(text)
-        node = xml.find(".//p")
-        self.pipe._convert_br_into_p(node)
-        self.assertEqual(
-            etree.tostring(xml),
-            b'<root><p><p><bold>Address for correspondence</bold>: </p><p> texto 1 </p><p> texto 2 <email>x@x.org</email></p></p></root>',
-        )
+class TestHTML2SPSPipelineRemoveInvalidBRPipe(unittest.TestCase):
+    def setUp(self):
+        self.pipeline = HTML2SPSPipeline(pid="S1234-56782018000100011")
+        self.pipe = self.pipeline.RemoveInvalidBRPipe()
 
-    def test__transform(self):
-        text = """<root><p><bold>Address for correspondence</bold>: <br/> texto 1 <br/> texto 2 <email>x@x.org</email></p></root>"""
+    def test_remove_invalid_br_pipe_removes_br_from_the_beginning_and_from_the_end(self):
+        text = """<root><p><br/> texto 1 <br/> texto 2 <br/></p></root>"""
         xml = etree.fromstring(text)
         node = xml.find(".//p")
         text, xml = self.pipe.transform((text, xml))
         self.assertEqual(
             etree.tostring(xml),
-            b'<root><p><bold>Address for correspondence</bold>: </p><p> texto 1 </p><p> texto 2 <email>x@x.org</email></p></root>',
+            b'<root><p> texto 1 <br/> texto 2 </p></root>',
         )
+
+
+class TestHTML2SPSPipelinePPipe(unittest.TestCase):
+    def setUp(self):
+        self.pipeline = HTML2SPSPipeline(pid="S1234-56782018000100011")
+        self.pipe = self.pipeline.PPipe()
+
+    def test__fix_br_position(self):
+        text = """<root><italic><p content-type="break">Study carried out at the Health Care Service
+        for Ostomy Patients in São José do Rio Preto – specialized outpatient
+        clinic related to the Secretariat of Health and regional reference to
+        the cities of the Regional Health Board – DRS XV – São José do Rio
+        Preto (SP), Brazil.    </p><p content-type="break">    Financing source: none.
+        </p><p content-type="break">    Conflict of interest: nothing to declare.</p></italic></root>"""
+        expected = """<root><p><italic>Study carried out at the Health Care Service
+        for Ostomy Patients in São José do Rio Preto – specialized outpatient
+        clinic related to the Secretariat of Health and regional reference to
+        the cities of the Regional Health Board – DRS XV – São José do Rio
+        Preto (SP), Brazil.    </italic></p><p><italic>    Financing source: none.
+        </italic></p><p><italic>    Conflict of interest: nothing to declare.</italic></p></root>"""
+        xml = etree.fromstring(text)
+        node = xml.find(".//p")
+        text, xml = self.pipe.transform((text, xml))
+        italic = xml.findall(".//p/italic")
+        self.assertEqual(len(italic), 3)
+        self.assertIn("Study carried out at the Health Care Service", italic[0].text)
+        self.assertIn("Financing source: none", italic[1].text)
+        self.assertIn("Conflict of interest", italic[2].text)

@@ -11,6 +11,7 @@ from documentstore_migracao.utils import xml as utils_xml
 from documentstore_migracao import config
 from documentstore_migracao.utils.convert_html_body_inferer import Inferer
 
+import faulthandler; faulthandler.enable()
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,8 @@ def wrap_content_node(_node, elem_wrap="p"):
 
 def gera_id(_string, index_body):
     rid = _string
+    if rid is None:
+        return
 
     if not rid[0].isalpha():
         rid = "replace_by_reftype" + rid
@@ -145,7 +148,9 @@ class HTML2SPSPipeline(object):
             self.BPipe(),
             self.StrongPipe(),
             self.ConvertElementsWhichHaveIdPipe(super_obj=self),
+            self.RemoveInvalidBRPipe(),
             self.BRPipe(),
+            self.BR2PPipe(),
             self.PPipe(),
             self.TdCleanPipe(),
             self.TableCleanPipe(),
@@ -325,60 +330,107 @@ class HTML2SPSPipeline(object):
             "trans-title",
         ]
 
+        def transform(self, data):
+            logger.info("BRPipe.transform - inicio")
+            raw, xml = data
+            for node in xml.findall(".//*[br]"):
+                if node.tag in self.ALLOWED_IN:
+                    for br in node.findall("br"):
+                        br.tag = "break"
+            logger.info("BRPipe.transform - inicio")
+            return data
+
+
+    class RemoveInvalidBRPipe(plumber.Pipe):
+
+        def _remove_first_or_last_br(self, xml):
+            """
+            b'<bold><br/>Luis Huicho</bold>
+            b'<bold>Luis Huicho</bold>
+            """
+            logger.info("RemoveInvalidBRPipe._remove_br - inicio")
+            while True:
+                change = False
+                for node in xml.findall(".//*[br]"):
+                    first = node.getchildren()[0]
+                    last = node.getchildren()[-1]
+                    if (node.text or "").strip() == "" and first.tag == "br":
+                        first.tag = "REMOVE_TAG"
+                        change = True
+                    if (last.tail or "").strip() == "" and last.tag == "br":
+                        last.tag = "REMOVE_TAG"
+                        change = True
+                if not change:
+                    break
+            etree.strip_tags(xml, "REMOVE_TAG")
+            logger.info("RemoveInvalidBRPipe._remove_br - fim")
+
+        def transform(self, data):
+            logger.info("RemoveInvalidBRPipe - inicio")
+            text, xml = data
+            self._remove_first_or_last_br(xml)
+            logger.info("RemoveInvalidBRPipe - fim")
+            return data
+
+    class BR2PPipe(plumber.Pipe):
         def _create_p(self, node, nodes, text):
+            logger.info("BR2PPipe._create_p - inicio")
             if nodes or (text or "").strip():
+                logger.info("BR2PPipe._create_p - element p")
                 p = etree.Element("p")
                 if node.tag not in ["REMOVE_P", "p"]:
                     p.set("content-type", "break")
                 p.text = text
+                logger.info("BR2PPipe._create_p - append nodes")
                 for n in nodes:
                     p.append(deepcopy(n))
-                for n in nodes:
-                    node.remove(n)
+                logger.info("BR2PPipe._create_p - node.append(p)")
                 node.append(p)
+            logger.info("BR2PPipe._create_p - fim")
 
-        def _convert_br_into_p(self, node):
+        def _create_new_node(self, node):
             """
             <root><p>texto <br/> texto 1</p></root>
             <root><p><p content-type= "break">texto </p><p content-type= "break"> texto 1</p></p></root>
             """
+            logger.info("BR2PPipe._create_new_node - inicio")
+            new = etree.Element(node.tag)
             text = node.text
-            node.text = ""
             nodes = []
-            for child in node.getchildren():
+            for i, child in enumerate(node.getchildren()):
                 if child.tag == "br":
-                    self._create_p(node, nodes, text)
+                    self._create_p(new, nodes, text)
                     nodes = []
                     text = child.tail
-                    node.remove(child)
                 else:
                     nodes.append(child)
-            self._create_p(node, nodes, text)
+            self._create_p(new, nodes, text)
+            logger.info("BR2PPipe._create_new_node - fim")
+            return new
+
+        def _executa(self, xml):
+            logger.info("BR2PPipe._executa - inicio")
+            while True:
+                node = xml.find(".//*[br]")
+                if node is None:
+                    break
+                parent = node.getparent()
+                new = self._create_new_node(node)
+                if node.tag == "p":
+                    new.tag = "REMOVE_TAG"
+                node.addprevious(new)
+                node.set("content-type", "remove")
+                parent.remove(node)
+            etree.strip_tags(xml, "REMOVE_TAG")
+            logger.info("BR2PPipe._executa - fim")
 
         def transform(self, data):
-            """
-            b'<p>Luis Huicho <br/> Batall&#243;n Libres de Trujillo 227, LI 33
-            <br/> Lima &#150; Peru
-            <br/> Tel. (+51)1999-37803 Fax: (+51)1319-0019
-            <br/> E-mail: <email>lhuicho@viabcp.com</email></p>
-            """
-            logger.info("BRPipe - inicio")
-            raw, xml = data
-            changed = False
-            found = xml.find(".//*[br]")
-            while found is not None:
-                logger.info(etree.tostring(found))
-                if found.tag in self.ALLOWED_IN:
-                    for br in found.findall("br"):
-                        br.tag = "break"
-                else:
-                    if found.tag == "p":
-                        found.tag = "REMOVE_P"
-                    self._convert_br_into_p(found)
-                found = xml.find(".//*[br]")
-            etree.strip_tags(xml, "REMOVE_P")
-            logger.info("BRPipe - fim")
+            logger.info("BR2PPipe - inicio")
+            text, xml = data
+            items = self._executa(xml)
+            logger.info("BR2PPipe - fim")
             return data
+
 
     class PPipe(plumber.Pipe):
         TAGS = [
@@ -413,6 +465,25 @@ class HTML2SPSPipeline(object):
             "th",
             "trans-abstract",
         ]
+        def _wrap_text_with_style_tags(self, xml):
+            """
+            b'<bold><br/>Luis Huicho</bold>
+            b'<br/><bold>Luis Huicho</bold>
+            """
+            for style_tag in ["bold", "italic", "sup", "sub", "underline", "a"]:
+                node = xml.find(".//{}[p]".format(style_tag))
+                while node is not None:
+                    parent = node.getparent()
+                    node.tag = "REMOVE_TAG"
+                    for p in node.findall("p"):
+                        p.tag = style_tag
+                        p.attrib.clear()
+                        e = etree.Element("p")
+                        e.append(deepcopy(p))
+                        node.remove(p)
+                        node.append(e)
+                    etree.strip_tags(xml, "REMOVE_TAG")
+                    node = xml.find(".//{}[p]".format(style_tag))
 
         def parser_node(self, node):
             _id = node.attrib.pop("id", None)
@@ -423,11 +494,12 @@ class HTML2SPSPipeline(object):
             etree.strip_tags(node, "big")
 
             parent = node.getparent()
-            if not parent.tag in self.TAGS:
+            if parent.tag not in self.TAGS:
                 logger.warning("Tag `p` in `%s`", parent.tag)
 
         def transform(self, data):
             raw, xml = data
+            self._wrap_text_with_style_tags(xml)
             _process(xml, "p", self.parser_node)
             logger.info("PPipe - fim")
             return data
@@ -1913,13 +1985,13 @@ class ConvertElementsWhichHaveIdPipeline(object):
         def transform(self, data):
             logger.info("Complete ")
             raw, xml = data
-            #print(1)
+            ##logger.info(1)
             self.move_fn_out_and_forwards(xml)
-            #print(1)
+            ##logger.info(1)
             self.move_fn_out_and_backwards(xml)
-            #print(1)
+            ##logger.info(1)
             for fn in xml.findall(".//fn"):
-                #print(2)
+                ##logger.info(2)
                 self._move_fn_tail_into_fn(fn)
                 self._identify_label_and_p(fn)
             logger.info("Complete fim ")
