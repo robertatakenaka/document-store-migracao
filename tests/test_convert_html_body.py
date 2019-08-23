@@ -448,44 +448,6 @@ class TestHTML2SPSPipeline(unittest.TestCase):
         raw, transformed = self._transform(text, self.pipeline.DeprecatedHTMLTagsPipe())
         self.assertEqual(etree.tostring(transformed), b"<root><p>Teste</p></root>")
 
-    def test_remove_exceeding_style_tags(self):
-        text = "<root><p><b></b></p><p><b>A</b></p><p><i><b/></i>Teste</p></root>"
-        raw, transformed = self._transform(
-            text, self.pipeline.RemoveExceedingStyleTagsPipe()
-        )
-        self.assertEqual(
-            etree.tostring(transformed), b"<root><p/><p><b>A</b></p><p>Teste</p></root>"
-        )
-
-    def test_remove_exceeding_style_tags_2(self):
-        text = "<root><p><b><i>dado<u></u></i></b></p></root>"
-        raw, transformed = self._transform(
-            text, self.pipeline.RemoveExceedingStyleTagsPipe()
-        )
-        self.assertEqual(
-            etree.tostring(transformed), b"<root><p><b><i>dado</i></b></p></root>"
-        )
-
-    def test_remove_exceeding_style_tags_3(self):
-        text = "<root><p><b>Titulo</b></p><p><b>Autor</b></p><p>Teste<i><b/></i></p></root>"
-        raw, transformed = self._transform(
-            text, self.pipeline.RemoveExceedingStyleTagsPipe()
-        )
-        self.assertEqual(
-            etree.tostring(transformed),
-            b"<root><p><b>Titulo</b></p><p><b>Autor</b></p><p>Teste</p></root>",
-        )
-
-    def test_remove_exceeding_style_tags_4(self):
-        text = '<root><p><b>   <img src="x"/></b></p><p><b>Autor</b></p><p>Teste<i><b/></i></p></root>'
-        raw, transformed = self._transform(
-            text, self.pipeline.RemoveExceedingStyleTagsPipe()
-        )
-        self.assertEqual(
-            etree.tostring(transformed),
-            b'<root><p>   <img src="x"/></p><p><b>Autor</b></p><p>Teste</p></root>',
-        )
-
     def test_pipe_graphicChildren_sub_remove(self):
         text = """<root><p><sub><graphic xmlns:ns2="http://www.w3.org/1999/xlink" ns2:href="/bul1.gif"/></sub></p></root>"""
         raw, transformed = self._transform(text, self.pipeline.GraphicChildrenPipe())
@@ -575,19 +537,65 @@ class TestHTML2SPSPipeline(unittest.TestCase):
             b"""<root><a id="B1">Texto</a><p>Texto</p><a id="B1-duplicate-0">Texto</a></root>""",
         )
 
+
+
+class TestHTML2SPSPipelineRemoveExceedingStyleTagsPipe(unittest.TestCase):
+    def setUp(self):
+        # filename = os.path.join(SAMPLES_PATH, "example_convert_html.xml")
+        # with open(filename, "r") as f:
+        #     self.xml_txt = f.read()
+        # self.etreeXML = etree.fromstring(self.xml_txt)
+        self.pipeline = HTML2SPSPipeline(pid="S1234-56782018000100011")
+        self.pipe = self.pipeline.RemoveExceedingStyleTagsPipe()
+
+    def test_remove_exceeding_style_tags(self):
+        text = "<root><p><b></b></p><p><b>A</b></p><p><i><b/></i>Teste</p></root>"
+        xml = etree.fromstring(text)
+        raw, transformed = self.pipe.transform((text, xml))
+        self.assertEqual(
+            etree.tostring(transformed), b"<root><p/><p><b>A</b></p><p>Teste</p></root>"
+        )
+
+    def test_remove_exceeding_style_tags_2(self):
+        text = "<root><p><b><i>dado<u></u></i></b></p></root>"
+        xml = etree.fromstring(text)
+        raw, transformed = self.pipe.transform((text, xml))
+        self.assertEqual(
+            etree.tostring(transformed), b"<root><p><b><i>dado</i></b></p></root>"
+        )
+
+    def test_remove_exceeding_style_tags_3(self):
+        text = "<root><p><b>Titulo</b></p><p><b>Autor</b></p><p>Teste<i><b/></i></p></root>"
+        xml = etree.fromstring(text)
+        raw, transformed = self.pipe.transform((text, xml))
+        self.assertEqual(
+            etree.tostring(transformed),
+            b"<root><p><b>Titulo</b></p><p><b>Autor</b></p><p>Teste</p></root>"
+        )
+
+    def test_remove_exceeding_style_tags_4(self):
+        text = '<root><p><b>   <img src="x"/></b></p><p><b>Autor</b></p><p>Teste<i><b/></i></p></root>'
+        xml = etree.fromstring(text)
+        raw, transformed = self.pipe.transform((text, xml))
+        self.assertEqual(
+            etree.tostring(transformed),
+            b'<root><p>   <img src="x"/></p><p><b>Autor</b></p><p>Teste</p></root>'
+        )
+
     def test_pipe_remove_exceeding_style_tags_removes_sup(self):
         text = """<root><sup><p><sup>*</sup>texto</p></sup></root>"""
         expected = b"""<root><p><sup>*</sup>texto</p></root>"""
         xml = etree.fromstring(text)
-        text, xml = self.pipeline.RemoveExceedingStyleTagsPipe().transform((text, xml))
+        text, xml = self.pipe.transform((text, xml))
         self.assertEqual(etree.tostring(xml), expected)
 
     def test_pipe_remove_exceeding_style_tags_switch_p_and_sup(self):
         text = """<root><sup><p>*texto</p></sup></root>"""
         expected = b"""<root><p><sup>*texto</sup></p></root>"""
         xml = etree.fromstring(text)
-        text, xml = self.pipeline.RemoveExceedingStyleTagsPipe().transform((text, xml))
+        text, xml = self.pipe.transform((text, xml))
         self.assertEqual(etree.tostring(xml), expected)
+
 
 class Test_RemovePWhichIsParentOfPPipe_Case1(unittest.TestCase):
     def setUp(self):
