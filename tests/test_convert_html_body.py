@@ -538,7 +538,6 @@ class TestHTML2SPSPipeline(unittest.TestCase):
         )
 
 
-
 class TestHTML2SPSPipelineRemoveExceedingStyleTagsPipe(unittest.TestCase):
     def setUp(self):
         # filename = os.path.join(SAMPLES_PATH, "example_convert_html.xml")
@@ -570,7 +569,7 @@ class TestHTML2SPSPipelineRemoveExceedingStyleTagsPipe(unittest.TestCase):
         raw, transformed = self.pipe.transform((text, xml))
         self.assertEqual(
             etree.tostring(transformed),
-            b"<root><p><b>Titulo</b></p><p><b>Autor</b></p><p>Teste</p></root>"
+            b"<root><p><b>Titulo</b></p><p><b>Autor</b></p><p>Teste</p></root>",
         )
 
     def test_remove_exceeding_style_tags_4(self):
@@ -579,7 +578,7 @@ class TestHTML2SPSPipelineRemoveExceedingStyleTagsPipe(unittest.TestCase):
         raw, transformed = self.pipe.transform((text, xml))
         self.assertEqual(
             etree.tostring(transformed),
-            b'<root><p>   <img src="x"/></p><p><b>Autor</b></p><p>Teste</p></root>'
+            b'<root><p>   <img src="x"/></p><p><b>Autor</b></p><p>Teste</p></root>',
         )
 
     def test_pipe_remove_exceeding_style_tags_removes_sup(self):
@@ -1302,10 +1301,10 @@ class TestConversionToTableWrap(unittest.TestCase):
 class TestConversionToCorresp(unittest.TestCase):
     def test_convert_to_corresp(self):
         text = """<root><a name="home" id="home"/><a name="back" id="back"/><a href="#home">*</a> Corresponding author</root>"""
-        expected_after_internal_link_as_asterisk_pipe = (
+        expected_after_removing_invalid_anchors = (
             b"""<root><a name="back" id="back"/>* Corresponding author</root>"""
         )
-        expected_after_anchor_and_internal_link_pipe = (
+        expected = (
             b"""<root><fn id="back" fn-type="corresp"/>* Corresponding author</root>"""
         )
 
@@ -1313,12 +1312,10 @@ class TestConversionToCorresp(unittest.TestCase):
         html_pl = HTML2SPSPipeline(pid="S1234-56782018000100011")
         pl = ConvertElementsWhichHaveIdPipeline(html_pl)
 
-        text, xml = pl.RemoveInternalLinksToTextIdentifiedByAsteriskPipe(
-            html_pl
-        ).transform((text, xml))
+        text, xml = pl.RemoveInvalidAnchorAndLinksPipe().transform((text, xml))
         self.assertNotIn(b'<a href="#home">*</a>', etree.tostring(xml))
         self.assertEqual(
-            etree.tostring(xml), expected_after_internal_link_as_asterisk_pipe
+            etree.tostring(xml), expected_after_removing_invalid_anchors
         )
 
         text, xml = pl.DeduceAndSuggestConversionPipe(html_pl).transform((text, xml))
@@ -1329,7 +1326,7 @@ class TestConversionToCorresp(unittest.TestCase):
 
         text, xml = pl.ApplySuggestedConversionPipe(html_pl).transform((text, xml))
         self.assertEqual(
-            etree.tostring(xml), expected_after_anchor_and_internal_link_pipe
+            etree.tostring(xml), expected
         )
 
 
@@ -1498,16 +1495,6 @@ class TestConvertElementsWhichHaveIdPipeline(unittest.TestCase):
         text, xml = self.pl.AddNameAndIdToElementAPipe(self.html_pl).transform(
             (text, xml)
         )
-        self.assertEqual(etree.tostring(xml), expected)
-
-    def test_pipe_asterisk_in_a_href(self):
-        text = '<root><a name="1a" id="1a"/><a href="#1b"><sup>*</sup></a></root>'
-        expected = b'<root><a name="1a" id="1a"/><sup>*</sup></root>'
-        xml = etree.fromstring(text)
-
-        text, xml = self.pl.RemoveInternalLinksToTextIdentifiedByAsteriskPipe(
-            self.html_pl
-        ).transform((text, xml))
         self.assertEqual(etree.tostring(xml), expected)
 
     def test_anchor_and_internal_link_pipe(self):

@@ -1356,30 +1356,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
             _process(xml, "a[@name]", self.parser_node)
             return data
 
-    class RemoveInternalLinksToTextIdentifiedByAsteriskPipe(CustomPipe):
-        """
-        Ao encontrar ```<a href="#tx">*</a>```, remove a tag e atributos,
-        deixando apenas *. Também localiza a referência cruzada correspondente,
-        por exemplo, ```<a name="tx">*</a>``` para remover também.
-        """
-
-        def parser_node(self, node):
-            href = node.attrib.get("href")
-            texts = get_node_text(node)
-            if href.startswith("#") and texts and texts[0] == "*":
-                previous = node.getprevious()
-                if previous is not None and previous.tag == "a":
-                    root = node.getroottree()
-                    related = root.find(".//*[@name='{}']".format(href[1:]))
-                    if related is not None:
-                        _remove_element_or_comment(related)
-                    _remove_element_or_comment(node)
-
-        def transform(self, data):
-            raw, xml = data
-            _process(xml, "a[@href]", self.parser_node)
-            return data
-
     class DeduceAndSuggestConversionPipe(CustomPipe):
         """Este pipe analisa os dados doss elementos a[@href] e a[@name],
         deduz e sugere tag, id, ref-type para a conversão de elementos,
