@@ -133,7 +133,6 @@ class HTML2SPSPipeline(object):
             self.RemoveEmptyPipe(),
             self.RemoveStyleAttributesPipe(),
             self.RemoveCommentPipe(),
-            self.PPipe(),
             self.DivPipe(),
             self.LiPipe(),
             self.OlPipe(),
@@ -149,6 +148,7 @@ class HTML2SPSPipeline(object):
             self.RemoveInvalidBRPipe(),
             self.BRPipe(),
             self.BR2PPipe(),
+            self.PPipe(),
             self.TdCleanPipe(),
             self.TableCleanPipe(),
             self.BlockquotePipe(),
@@ -428,6 +428,7 @@ class HTML2SPSPipeline(object):
             logger.info("BR2PPipe - fim")
             return data
 
+
     class PPipe(plumber.Pipe):
         TAGS = [
             "abstract",
@@ -462,6 +463,26 @@ class HTML2SPSPipeline(object):
             "trans-abstract",
         ]
 
+        def _apply_style_to_paragraphs(self, xml):
+            """
+            b'<bold><p>Luis Huicho</p></bold>
+            b'<p><bold>Luis Huicho</bold></p>
+            """
+            for style_tag in ["bold", "italic", "sup", "sub", "underline", "a"]:
+                node = xml.find(".//{}[p]".format(style_tag))
+                while node is not None:
+                    parent = node.getparent()
+                    node.tag = "REMOVE_TAG"
+                    for p in node.findall("p"):
+                        p.tag = style_tag
+                        p.attrib.clear()
+                        e = etree.Element("p")
+                        e.append(deepcopy(p))
+                        node.remove(p)
+                        node.append(e)
+                    etree.strip_tags(xml, "REMOVE_TAG")
+                    node = xml.find(".//{}[p]".format(style_tag))
+
         def parser_node(self, node):
             _id = node.attrib.pop("id", None)
             node.attrib.clear()
@@ -471,12 +492,14 @@ class HTML2SPSPipeline(object):
             etree.strip_tags(node, "big")
 
             parent = node.getparent()
-            if not parent.tag in self.TAGS:
+            if parent.tag not in self.TAGS:
                 logger.warning("Tag `p` in `%s`", parent.tag)
 
         def transform(self, data):
             raw, xml = data
+            self._apply_style_to_paragraphs(xml)
             _process(xml, "p", self.parser_node)
+            logger.info("PPipe - fim")
             return data
 
     class DivPipe(plumber.Pipe):

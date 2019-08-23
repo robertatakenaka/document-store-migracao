@@ -2462,3 +2462,30 @@ class TestHTML2SPSPipelineRemoveInvalidBRPipe(unittest.TestCase):
         self.assertEqual(
             etree.tostring(xml), b"<root><p> texto 1 <br/> texto 2 </p></root>"
         )
+
+class TestHTML2SPSPipelinePPipe(unittest.TestCase):
+    def setUp(self):
+        self.pipeline = HTML2SPSPipeline(pid="S1234-56782018000100011")
+        self.pipe = self.pipeline.PPipe()
+
+    def test__apply_style_to_paragraphs(self):
+        text = """<root><italic><p content-type="break">Study carried out at the Health Care Service
+        for Ostomy Patients in São José do Rio Preto – specialized outpatient
+        clinic related to the Secretariat of Health and regional reference to
+        the cities of the Regional Health Board – DRS XV – São José do Rio
+        Preto (SP), Brazil.    </p><p content-type="break">    Financing source: none.
+        </p><p content-type="break">    Conflict of interest: nothing to declare.</p></italic></root>"""
+        expected = """<root><p><italic>Study carried out at the Health Care Service
+        for Ostomy Patients in São José do Rio Preto – specialized outpatient
+        clinic related to the Secretariat of Health and regional reference to
+        the cities of the Regional Health Board – DRS XV – São José do Rio
+        Preto (SP), Brazil.    </italic></p><p><italic>    Financing source: none.
+        </italic></p><p><italic>    Conflict of interest: nothing to declare.</italic></p></root>"""
+        xml = etree.fromstring(text)
+        node = xml.find(".//p")
+        text, xml = self.pipe.transform((text, xml))
+        italic = xml.findall(".//p/italic")
+        self.assertEqual(len(italic), 3)
+        self.assertIn("Study carried out at the Health Care Service", italic[0].text)
+        self.assertIn("Financing source: none", italic[1].text)
+        self.assertIn("Conflict of interest", italic[2].text)
