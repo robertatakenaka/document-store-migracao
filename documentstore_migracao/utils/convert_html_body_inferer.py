@@ -1,4 +1,3 @@
-
 from documentstore_migracao import config
 from documentstore_migracao.utils import files
 
@@ -6,6 +5,7 @@ from documentstore_migracao.utils import files
 STARTSWITH_RETURNS_TAG_AND_REFTYPE = tuple(
     [tuple(item.strip().split()) for item in open(config.CONVERSION_TAGS).readlines()]
 )
+
 
 class Inferer:
 
@@ -50,7 +50,6 @@ class Inferer:
                 return tag, self.ref_type(tag)
         if "corresp" in a_href_text:
             return "corresp", "corresp"
-
 
     def tag_and_reftype_and_id_from_filepath(self, file_path, elem_name=None):
         filename, __ = files.extract_filename_ext_by_path(file_path)
