@@ -1254,9 +1254,7 @@ class TestConversionToCorresp(unittest.TestCase):
         html_pl = HTML2SPSPipeline(pid="S1234-56782018000100011")
         pl = ConvertElementsWhichHaveIdPipeline(html_pl)
 
-        text, xml = pl.RemoveInternalLinksToTextIdentifiedByAsteriskPipe(
-            html_pl
-        ).transform((text, xml))
+        text, xml = pl.RemoveInvalidAnchorAndLinksPipe().transform((text, xml))
         self.assertNotIn(b'<a href="#home">*</a>', etree.tostring(xml))
         self.assertEqual(
             etree.tostring(xml), expected_after_internal_link_as_asterisk_pipe
@@ -1441,16 +1439,6 @@ class TestConvertElementsWhichHaveIdPipeline(unittest.TestCase):
         )
         self.assertEqual(etree.tostring(xml), expected)
 
-    def test_pipe_asterisk_in_a_href(self):
-        text = '<root><a name="1a" id="1a"/><a href="#1b"><sup>*</sup></a></root>'
-        expected = b'<root><a name="1a" id="1a"/><sup>*</sup></root>'
-        xml = etree.fromstring(text)
-
-        text, xml = self.pl.RemoveInternalLinksToTextIdentifiedByAsteriskPipe(
-            self.html_pl
-        ).transform((text, xml))
-        self.assertEqual(etree.tostring(xml), expected)
-
     def test_anchor_and_internal_link_pipe(self):
         text = b"""<root>
             <a href="#anx01" xml_tag="app" xml_reftype="app" xml_id="anx01" xml_label="anexo 1">Anexo 1</a>
@@ -1509,13 +1497,17 @@ class TestConvertElementsWhichHaveIdPipeline(unittest.TestCase):
 
     def test_pipe_remove_anchor_and_links_to_text_removes_some_elements(self):
         text = """<root>
-        <a href="#nota" xml_tag="xref" xml_id="nota" xml_label="1" xml_reftype="fn">1</a>
-        <a name="texto" xml_tag="fn" xml_id="texto" xml_reftype="fn"/>
-        <a name="nota"  xml_tag="fn" xml_id="nota" xml_reftype="fn"/>
-        <a href="#texto" xml_tag="xref" xml_id="texto" xml_reftype="xref">1</a> Nota bla bla
+        <a href="#nota">1</a>
+        <a name="texto"/>
+        <a name="nota"/>
+        <a name="nota"/>
+        <a href="#texto">1</a> Nota bla bla
         </root>"""
         raw, transformed = text, etree.fromstring(text)
-        raw, transformed = self.pl.RemoveAnchorAndLinksToTextPipe().transform(
+        nodes = transformed.findall(".//a[@name='nota']")
+        self.assertEqual(len(nodes), 2)
+
+        raw, transformed = self.pl.RemoveInvalidAnchorAndLinksPipe().transform(
             (raw, transformed)
         )
         nodes = transformed.findall(".//a[@name='nota']")

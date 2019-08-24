@@ -70,6 +70,8 @@ def wrap_content_node(_node, elem_wrap="p"):
     _node.insert(0, p)
 
 def gera_id(_string, index_body):
+    if not _string:
+        return
     rid = _string
 
     if not rid[0].isalpha():
@@ -1122,8 +1124,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.SetupPipe(),
             self.RemoveThumbImgPipe(),
             self.AddNameAndIdToElementAPipe(super_obj=html_pipeline),
+            self.RemoveInvalidAnchorAndLinksPipe(),
             self.DeduceAndSuggestConversionPipe(super_obj=html_pipeline),
-            self.RemoveAnchorAndLinksToTextPipe(),
             self.ApplySuggestedConversionPipe(super_obj=html_pipeline),
             self.AddAssetInfoToTablePipe(super_obj=html_pipeline),
             self.CreateAssetElementsFromExternalLinkElementsPipe(
@@ -1379,30 +1381,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
             _process(xml, "a[@name]", self.parser_node)
             return data
 
-    class RemoveInternalLinksToTextIdentifiedByAsteriskPipe(CustomPipe):
-        """
-        Ao encontrar ```<a href="#tx">*</a>```, remove a tag e atributos,
-        deixando apenas *. Também localiza a referência cruzada correspondente,
-        por exemplo, ```<a name="tx">*</a>``` para remover também.
-        """
-
-        def parser_node(self, node):
-            href = node.attrib.get("href")
-            texts = get_node_text(node)
-            if href.startswith("#") and texts and texts[0] == "*":
-                previous = node.getprevious()
-                if previous is not None and previous.tag == "a":
-                    root = node.getroottree()
-                    related = root.find(".//*[@name='{}']".format(href[1:]))
-                    if related is not None:
-                        _remove_element_or_comment(related)
-                    _remove_element_or_comment(node)
-
-        def transform(self, data):
-            raw, xml = data
-            _process(xml, "a[@href]", self.parser_node)
-            return data
-
     class DeduceAndSuggestConversionPipe(CustomPipe):
         """Este pipe analisa os dados doss elementos a[@href] e a[@name],
         deduz e sugere tag, id, ref-type para a conversão de elementos,
@@ -1554,30 +1532,48 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self._add_xml_attribs_to_img(images)
             return data
 
-    class RemoveAnchorAndLinksToTextPipe(plumber.Pipe):
+    class RemoveInvalidAnchorAndLinksPipe(plumber.Pipe):
         """
-        No texto há ancoras e referencias cruzada do texto para as notas e
-        também das notas para o texto. Este pipe é para remover as
-        âncoras e referências cruzadas das notas para o texto.
+        No texto há âncoras (a[@name]) e referencias cruzada (a[@href]):
+        TEXTO->NOTAS e NOTAS->TEXTO.
+        Remove as âncoras e referências cruzadas relacionadas com NOTAS->TEXTO.
+        Também remover duplicidade de a[@name]
         """
+
+        def _fix_a_href(self, xml):
+            for a in xml.findall(".//a[@name]"):
+                name = a.attrib.get("name")
+                for a_href in xml.findall(".//a[@href='{}']".format(name)):
+                    a_href.set("href", "#" + name)
 
         def _identify_order(self, xml):
             items_by_id = {}
-            for a in xml.findall(".//a[@xml_tag]"):
-                if a.attrib.get("xml_tag") == "fn":
-                    _id = a.attrib.get("xml_id")
+            for a in xml.findall(".//a"):
+                _id = a.attrib.get("name")
+                if not _id:
+                    href = a.attrib.get("href")
+                    if href and href.startswith("#"):
+                        _id = href[1:]
+                if _id:
                     items_by_id[_id] = items_by_id.get(_id, [])
                     items_by_id[_id].append(a)
             return items_by_id
 
         def _exclude(self, items_by_id):
             for _id, nodes in items_by_id.items():
+                repeated = [n for n in nodes if n.attrib.get("name")]
+                if len(repeated) > 1:
+                    for n in repeated[1:]:
+                        nodes.remove(n)
+                        parent = n.getparent()
+                        parent.remove(n)
                 if len(nodes) >= 2 and nodes[0].attrib.get("name"):
                     for n in nodes:
                         _remove_element_or_comment(n)
 
         def transform(self, data):
             raw, xml = data
+            self._fix_a_href(xml)
             items_by_id = self._identify_order(xml)
             self._exclude(items_by_id)
             return data
