@@ -69,7 +69,6 @@ def wrap_content_node(_node, elem_wrap="p"):
     _node.tail = None
     _node.insert(0, p)
 
-
 def gera_id(_string, index_body):
     rid = _string
 
@@ -129,7 +128,7 @@ class HTML2SPSPipeline(object):
             self.DeprecatedHTMLTagsPipe(),
             self.RemoveImgSetaPipe(),
             self.RemoveDuplicatedIdPipe(),
-            self.RemoveExceedingStyleTagsPipe(),
+            self.RemoveOrMoveStyleTagsPipe(),
             self.RemoveEmptyPipe(),
             self.RemoveStyleAttributesPipe(),
             self.RemoveCommentPipe(),
@@ -214,20 +213,40 @@ class HTML2SPSPipeline(object):
 
             return data
 
-    class RemoveExceedingStyleTagsPipe(plumber.Pipe):
-        STYLE_TAGS = ("b", "i", "em", "strong", "u", "sup")
+    class RemoveOrMoveStyleTagsPipe(plumber.Pipe):
+        STYLE_TAGS = ("b", "i", "em", "strong", "u", "sup", "sub")
 
-        def _move_style_tag_into_p(self, node):
+        def _wrap_node_content_with_new_tag(self, node, new_tag):
+            # envolve o conteúdo de node com new_tag
+            if node.tag == new_tag:
+                return
+            node_copy = etree.Element(node.tag)
+            new_elem = etree.Element(new_tag)
+            new_elem.text = node.text
+            for child in node.getchildren():
+                new_elem.append(deepcopy(child))
+            node_copy.append(new_elem)
+            node.addprevious(node_copy)
+            parent = node.getparent()
+            parent.remove(node)
+
+        def _move_style_tag_into_children(self, node):
             """
-            Troca de lugar <sub><p>Texto</p></sub> para <p><sub>Texto</sub></p>
+            Move tags de estilo para dentro de seus filhos
             """
-            children = node.getchildren()
-            if not (children[0].tail or "").strip() and not (node.text or "").strip():
-                children[0].tag = node.tag
-                node.tag = "p"
-                for name, value in children[0].attrib.items():
-                    node.set(name, value)
-                    children[0].attrib.pop(name)
+            if (node.text or "").strip():
+                e = etree.Element(node.tag)
+                e.text = node.text
+                node.text = ""
+                node.addprevious(e)
+            for node_child in node.getchildren():
+                if (node_child.tail or "").strip():
+                    e = etree.Element(node.tag)
+                    e.text = node_child.tail
+                    node_child.tail = ""
+                    node_child.addnext(e)
+                # envolve o conteúdo de node_child com a tag de estilo
+                self._wrap_node_content_with_new_tag(node_child, node.tag)
 
         def _remove_or_move_style_tags(self, xml):
             for style_tag in self.STYLE_TAGS:
@@ -238,8 +257,9 @@ class HTML2SPSPipeline(object):
                         node.tag = "STRIPTAG"
                     elif node.find(".//{}".format(style_tag)) is not None:
                         node.tag = "STRIPTAG"
-                    elif len(children) == 1 and children[0].tag == "p":
-                        self._move_style_tag_into_p(node)
+                    elif node.find("p") is not None:
+                        self._move_style_tag_into_children(node)
+                        node.tag ="STRIPTAG"
             etree.strip_tags(xml, "STRIPTAG")
 
         def transform(self, data):

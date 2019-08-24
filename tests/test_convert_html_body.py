@@ -1356,7 +1356,7 @@ class Test_HTML2SPSPipeline(unittest.TestCase):
             pipeline.DeprecatedHTMLTagsPipe(),
             pipeline.RemoveImgSetaPipe(),
             pipeline.RemoveDuplicatedIdPipe(),
-            pipeline.RemoveExceedingStyleTagsPipe(),
+            pipeline.RemoveOrMoveStyleTagsPipe(),
             pipeline.RemoveEmptyPipe(),
             pipeline.RemoveStyleAttributesPipe(),
             pipeline.RemoveCommentPipe(),
@@ -2332,31 +2332,31 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertIn("Corresponding author", xml.find(".//fn/p").text, "*")
 
 
-class TestRemoveExceedingStyleTagsPipe(unittest.TestCase):
+class TestRemoveOrMoveStyleTagsPipe(unittest.TestCase):
     def setUp(self):
         self.pipeline = HTML2SPSPipeline(pid="pid")
-        self.pipe = self.pipeline.RemoveExceedingStyleTagsPipe()
+        self.pipe = self.pipeline.RemoveOrMoveStyleTagsPipe()
 
     def _transform(self, text):
         tree = etree.fromstring(text)
         data = text, tree
         return self.pipe.transform(data)
 
-    def test_remove_exceeding_style_tags(self):
+    def test_remove_or_move_style_tags_removes_exceeding_style_tags(self):
         text = "<root><p><b></b></p><p><b>A</b></p><p><i><b/></i>Teste</p></root>"
         raw, transformed = self._transform(text)
         self.assertEqual(
             etree.tostring(transformed), b"<root><p/><p><b>A</b></p><p>Teste</p></root>"
         )
 
-    def test_remove_exceeding_style_tags_2(self):
+    def test_remove_or_move_style_tags_removes_exceeding_style_tags_2(self):
         text = "<root><p><b><i>dado<u></u></i></b></p></root>"
         raw, transformed = self._transform(text)
         self.assertEqual(
             etree.tostring(transformed), b"<root><p><b><i>dado</i></b></p></root>"
         )
 
-    def test_remove_exceeding_style_tags_3(self):
+    def test_remove_or_move_style_tags_removes_exceeding_style_tags_3(self):
         text = "<root><p><b>Titulo</b></p><p><b>Autor</b></p><p>Teste<i><b/></i></p></root>"
         raw, transformed = self._transform(text)
         self.assertEqual(
@@ -2364,7 +2364,7 @@ class TestRemoveExceedingStyleTagsPipe(unittest.TestCase):
             b"<root><p><b>Titulo</b></p><p><b>Autor</b></p><p>Teste</p></root>",
         )
 
-    def test_remove_exceeding_style_tags_4(self):
+    def test_remove_or_move_style_tags_removes_exceeding_style_tags_4(self):
         text = '<root><p><b>   <img src="x"/></b></p><p><b>Autor</b></p><p>Teste<i><b/></i></p></root>'
         raw, transformed = self._transform(text)
         self.assertEqual(
@@ -2372,14 +2372,32 @@ class TestRemoveExceedingStyleTagsPipe(unittest.TestCase):
             b'<root><p>   <img src="x"/></p><p><b>Autor</b></p><p>Teste</p></root>',
         )
 
-    def test_pipe_remove_exceeding_style_tags_removes_sup(self):
+    def test_remove_or_move_style_tags_removes_sup(self):
         text = """<root><sup><p><sup>*</sup>texto</p></sup></root>"""
         expected = b"""<root><p><sup>*</sup>texto</p></root>"""
         raw, transformed = self._transform(text)
         self.assertEqual(etree.tostring(transformed), expected)
 
-    def test_pipe_remove_exceeding_style_tags_moves_sup_into_p(self):
+    def test_remove_or_move_style_tags_moves_sup_into_p(self):
         text = """<root><sup><p>*texto</p></sup></root>"""
         expected = b"""<root><p><sup>*texto</sup></p></root>"""
+        raw, transformed = self._transform(text)
+        self.assertEqual(etree.tostring(transformed), expected)
+
+    def test_remove_or_move_style_tags_does_nothing(self):
+        text = """<root><sup><italic>texto 4</italic></sup></root>"""
+        expected = b"""<root><sup><italic>texto 4</italic></sup></root>"""
+        raw, transformed = self._transform(text)
+        self.assertEqual(etree.tostring(transformed), expected)
+
+    def test_remove_or_move_style_tags_wrap_texto1_with_sup(self):
+        text = """<root><sup>TExto 1 <p>*texto 2</p></sup></root>"""
+        expected = b"""<root><sup>TExto 1 </sup><p><sup>*texto 2</sup></p></root>"""
+        raw, transformed = self._transform(text)
+        self.assertEqual(etree.tostring(transformed), expected)
+
+    def test_remove_or_move_style_tags_wrap_texto3_with_sup(self):
+        text = """<root><sup><p>*texto 2</p> texto 3 </sup></root>"""
+        expected = b"""<root><p><sup>*texto 2</sup></p><sup> texto 3 </sup></root>"""
         raw, transformed = self._transform(text)
         self.assertEqual(etree.tostring(transformed), expected)
