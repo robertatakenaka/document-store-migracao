@@ -1042,7 +1042,6 @@ class DataSanitizationPipeline(object):
             self.GraphicInExtLink(),
             self.TableinBody(),
             self.TableinP(),
-            self.AddPinFN(),
             self.WrapNodeInDefItem(),
         )
 
@@ -1086,17 +1085,6 @@ class DataSanitizationPipeline(object):
             raw, xml = data
 
             _process(xml, "p[table]", self.parser_node)
-            return data
-
-    class AddPinFN(plumber.Pipe):
-        def parser_node(self, node):
-            if node.text:
-                wrap_content_node(node, "p")
-
-        def transform(self, data):
-            raw, xml = data
-
-            _process(xml, "fn", self.parser_node)
             return data
 
     class WrapNodeInDefItem(plumber.Pipe):
