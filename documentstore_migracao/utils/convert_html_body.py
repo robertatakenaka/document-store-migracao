@@ -129,7 +129,7 @@ class HTML2SPSPipeline(object):
             self.DeprecatedHTMLTagsPipe(),
             self.RemoveImgSetaPipe(),
             self.RemoveDuplicatedIdPipe(),
-            self.RemoveExcedingStyleTagsPipe(),
+            self.RemoveExceedingStyleTagsPipe(),
             self.RemoveEmptyPipe(),
             self.RemoveStyleAttributesPipe(),
             self.RemoveCommentPipe(),
@@ -214,7 +214,7 @@ class HTML2SPSPipeline(object):
 
             return data
 
-    class RemoveExcedingStyleTagsPipe(plumber.Pipe):
+    class RemoveExceedingStyleTagsPipe(plumber.Pipe):
         TAGS = ("b", "i", "em", "strong", "u")
 
         def transform(self, data):
