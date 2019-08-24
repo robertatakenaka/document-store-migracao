@@ -215,16 +215,36 @@ class HTML2SPSPipeline(object):
             return data
 
     class RemoveExceedingStyleTagsPipe(plumber.Pipe):
-        TAGS = ("b", "i", "em", "strong", "u")
+        STYLE_TAGS = ("b", "i", "em", "strong", "u", "sup")
+
+        def _move_style_tag_into_p(self, node):
+            """
+            Troca de lugar <sub><p>Texto</p></sub> para <p><sub>Texto</sub></p>
+            """
+            children = node.getchildren()
+            if not (children[0].tail or "").strip() and not (node.text or "").strip():
+                children[0].tag = node.tag
+                node.tag = "p"
+                for name, value in children[0].attrib.items():
+                    node.set(name, value)
+                    children[0].attrib.pop(name)
+
+        def _remove_or_move_style_tags(self, xml):
+            for style_tag in self.STYLE_TAGS:
+                for node in xml.findall(".//" + style_tag):
+                    text = get_node_text(node)
+                    children = node.getchildren()
+                    if not text:
+                        node.tag = "STRIPTAG"
+                    elif node.find(".//{}".format(style_tag)) is not None:
+                        node.tag = "STRIPTAG"
+                    elif len(children) == 1 and children[0].tag == "p":
+                        self._move_style_tag_into_p(node)
+            etree.strip_tags(xml, "STRIPTAG")
 
         def transform(self, data):
             raw, xml = data
-            for tag in self.TAGS:
-                for node in xml.findall(".//" + tag):
-                    text = get_node_text(node)
-                    if not text:
-                        node.tag = "STRIPTAG"
-            etree.strip_tags(xml, "STRIPTAG")
+            self._remove_or_move_style_tags(xml)
             return data
 
     class RemoveEmptyPipe(plumber.Pipe):

@@ -2371,3 +2371,15 @@ class TestRemoveExceedingStyleTagsPipe(unittest.TestCase):
             etree.tostring(transformed),
             b'<root><p>   <img src="x"/></p><p><b>Autor</b></p><p>Teste</p></root>',
         )
+
+    def test_pipe_remove_exceeding_style_tags_removes_sup(self):
+        text = """<root><sup><p><sup>*</sup>texto</p></sup></root>"""
+        expected = b"""<root><p><sup>*</sup>texto</p></root>"""
+        raw, transformed = self._transform(text)
+        self.assertEqual(etree.tostring(transformed), expected)
+
+    def test_pipe_remove_exceeding_style_tags_moves_sup_into_p(self):
+        text = """<root><sup><p>*texto</p></sup></root>"""
+        expected = b"""<root><p><sup>*texto</sup></p></root>"""
+        raw, transformed = self._transform(text)
+        self.assertEqual(etree.tostring(transformed), expected)
