@@ -448,44 +448,6 @@ class TestHTML2SPSPipeline(unittest.TestCase):
         raw, transformed = self._transform(text, self.pipeline.DeprecatedHTMLTagsPipe())
         self.assertEqual(etree.tostring(transformed), b"<root><p>Teste</p></root>")
 
-    def test_remove_exceeding_style_tags(self):
-        text = "<root><p><b></b></p><p><b>A</b></p><p><i><b/></i>Teste</p></root>"
-        raw, transformed = self._transform(
-            text, self.pipeline.RemoveExceedingStyleTagsPipe()
-        )
-        self.assertEqual(
-            etree.tostring(transformed), b"<root><p/><p><b>A</b></p><p>Teste</p></root>"
-        )
-
-    def test_remove_exceeding_style_tags_2(self):
-        text = "<root><p><b><i>dado<u></u></i></b></p></root>"
-        raw, transformed = self._transform(
-            text, self.pipeline.RemoveExceedingStyleTagsPipe()
-        )
-        self.assertEqual(
-            etree.tostring(transformed), b"<root><p><b><i>dado</i></b></p></root>"
-        )
-
-    def test_remove_exceeding_style_tags_3(self):
-        text = "<root><p><b>Titulo</b></p><p><b>Autor</b></p><p>Teste<i><b/></i></p></root>"
-        raw, transformed = self._transform(
-            text, self.pipeline.RemoveExceedingStyleTagsPipe()
-        )
-        self.assertEqual(
-            etree.tostring(transformed),
-            b"<root><p><b>Titulo</b></p><p><b>Autor</b></p><p>Teste</p></root>",
-        )
-
-    def test_remove_exceeding_style_tags_4(self):
-        text = '<root><p><b>   <img src="x"/></b></p><p><b>Autor</b></p><p>Teste<i><b/></i></p></root>'
-        raw, transformed = self._transform(
-            text, self.pipeline.RemoveExceedingStyleTagsPipe()
-        )
-        self.assertEqual(
-            etree.tostring(transformed),
-            b'<root><p>   <img src="x"/></p><p><b>Autor</b></p><p>Teste</p></root>',
-        )
-
     def test_pipe_graphicChildren_sub_remove(self):
         text = """<root><p><sub><graphic xmlns:ns2="http://www.w3.org/1999/xlink" ns2:href="/bul1.gif"/></sub></p></root>"""
         raw, transformed = self._transform(text, self.pipeline.GraphicChildrenPipe())
@@ -2368,3 +2330,44 @@ class TestCompleteFnConversionPipe(unittest.TestCase):
         self.assertEqual(xml.find(".//fn/label").text, "*")
         self.assertEqual(xml.find(".//fn/p/email").text, "chrisg@vortex.ufrgs.br")
         self.assertIn("Corresponding author", xml.find(".//fn/p").text, "*")
+
+
+class TestRemoveExceedingStyleTagsPipe(unittest.TestCase):
+    def setUp(self):
+        self.pipeline = HTML2SPSPipeline(pid="pid")
+        self.pipe = self.pipeline.RemoveExceedingStyleTagsPipe()
+
+    def _transform(self, text):
+        tree = etree.fromstring(text)
+        data = text, tree
+        return self.pipe.transform(data)
+
+    def test_remove_exceeding_style_tags(self):
+        text = "<root><p><b></b></p><p><b>A</b></p><p><i><b/></i>Teste</p></root>"
+        raw, transformed = self._transform(text)
+        self.assertEqual(
+            etree.tostring(transformed), b"<root><p/><p><b>A</b></p><p>Teste</p></root>"
+        )
+
+    def test_remove_exceeding_style_tags_2(self):
+        text = "<root><p><b><i>dado<u></u></i></b></p></root>"
+        raw, transformed = self._transform(text)
+        self.assertEqual(
+            etree.tostring(transformed), b"<root><p><b><i>dado</i></b></p></root>"
+        )
+
+    def test_remove_exceeding_style_tags_3(self):
+        text = "<root><p><b>Titulo</b></p><p><b>Autor</b></p><p>Teste<i><b/></i></p></root>"
+        raw, transformed = self._transform(text)
+        self.assertEqual(
+            etree.tostring(transformed),
+            b"<root><p><b>Titulo</b></p><p><b>Autor</b></p><p>Teste</p></root>",
+        )
+
+    def test_remove_exceeding_style_tags_4(self):
+        text = '<root><p><b>   <img src="x"/></b></p><p><b>Autor</b></p><p>Teste<i><b/></i></p></root>'
+        raw, transformed = self._transform(text)
+        self.assertEqual(
+            etree.tostring(transformed),
+            b'<root><p>   <img src="x"/></p><p><b>Autor</b></p><p>Teste</p></root>',
+        )
