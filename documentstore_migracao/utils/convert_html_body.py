@@ -1202,7 +1202,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.MoveFnPipe(),
             self.AddContentToFnPipe(),
             self.FnLabelAndPPipe(),
-            
+            self.TargetPipe(),
         )
 
     def deploy(self, raw):
@@ -1999,6 +1999,57 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 self._create_label(fn)
                 self._create_p(fn)
             return data
+
+    class TargetPipe(plumber.Pipe):
+        """
+        Os elementos "a" podem ser convertidos a tabelas, figuras, fórmulas,
+        anexos, notas de rodapé etc. Por padrão, até este ponto, todos os
+        elementos não identificados como tabelas, figuras, fórmulas,
+        anexos, são identificados como "fn" (notas de rodapé). No entanto,
+        podem ser apenas "target"
+        """
+        def transform(self, data):
+            raw, xml = data
+            for fn in xml.findall(".//fn"):
+                _is_target = self._is_target(fn)
+                if _is_target:
+                    if get_node_text(fn):
+                        target = etree.Element("target")
+                        for k, v in fn.attrib.items():
+                            target.set(k, v)
+                        fn.addprevious(target)
+                        fn.tag = "REMOVE_TAG"
+                        etree.strip_tags(fn, "REMOVE_TAG")
+                    else:
+                        fn.tag = "target"
+            return data
+
+        def _is_target(self, node):
+            if not get_node_text(node):
+                return True
+            previous = fn.getprevious()
+            if previous is not None:
+                return True
+            parent = fn.getparent()
+            if (parent.text or "").strip():
+                return True
+            root = node.getroot()
+            found = [e.findall(".//fn") for e in root.findall("*")]
+            fn_items = []
+            blank = []
+            for item in found[::-1]:
+                if len(item) == 1:
+                    fn_items.append(item)
+                elif len(item) > 1:
+                    fn_items.extend(item)
+                elif len(fn_items) > 0 and len(blank) > 0:
+                    break
+                else:
+                    blank.append(item)
+            logger.info(found)
+            logger.info(fn_items)
+            if fn not in fn_items:
+                return True
 
 
 class AssetInHTMLPage:
