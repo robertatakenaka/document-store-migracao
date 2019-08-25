@@ -544,7 +544,9 @@ class TestHTML2SPSPipeline(unittest.TestCase):
          <a name="nt03"></a><a href="#tx03">3</a> A norma-A é definida como: ||<i>w</i>||<i><sub>A</sub> </i>= <img src="/img/revistas/tema/v15n3/a05img15.jpg" align="absmiddle"/>.</p></root>"""
 
         xml = etree.fromstring(text)
-        text, xml = self._transform(text, self.pipeline.ConvertElementsWhichHaveIdPipe(self.pipeline))
+        text, xml = self._transform(
+            text, self.pipeline.ConvertElementsWhichHaveIdPipe(self.pipeline)
+        )
         text, xml = self.pipeline.RemoveInvalidBRPipe().transform((text, xml))
         text, xml = self.pipeline.BRPipe().transform((text, xml))
         text, xml = self.pipeline.BR2PPipe().transform((text, xml))
@@ -559,6 +561,7 @@ class TestHTML2SPSPipeline(unittest.TestCase):
         self.assertIn("O número de condição", fn[1].find("p").text)
         self.assertIn("T", fn[2].find("p/i").text)
         self.assertIn("A norma-A", fn[3].find("p").text)
+
 
 class Test_RemovePWhichIsParentOfPPipe_Case1(unittest.TestCase):
     def setUp(self):
@@ -1281,17 +1284,20 @@ class TestConversionToCorresp(unittest.TestCase):
         text, xml = self.pl.RemoveInvalidAnchorAndLinksPipe().transform((text, xml))
         self.assertNotIn(b'<a href="#home">*</a>', etree.tostring(xml))
         self.assertEqual(
-            etree.tostring(xml),
-            expected_after_remove_invalid_anchors_and_links
+            etree.tostring(xml), expected_after_remove_invalid_anchors_and_links
         )
 
-        text, xml = self.pl.DeduceAndSuggestConversionPipe(self.html_pl).transform((text, xml))
+        text, xml = self.pl.DeduceAndSuggestConversionPipe(self.html_pl).transform(
+            (text, xml)
+        )
         self.assertIn(
             b'<a name="back" id="back" xml_tag="corresp" xml_reftype="corresp" xml_id="back"/>',
             etree.tostring(xml),
         )
 
-        text, xml = self.pl.ApplySuggestedConversionPipe(self.html_pl).transform((text, xml))
+        text, xml = self.pl.ApplySuggestedConversionPipe(self.html_pl).transform(
+            (text, xml)
+        )
         self.assertEqual(
             etree.tostring(xml), expected_after_anchor_and_internal_link_pipe
         )
@@ -1333,8 +1339,6 @@ class TestConversionToCorresp(unittest.TestCase):
         self.assertEqual(p[3].text.strip(), "CEP: 12100-000 – Taubaté (SP), Brazil.")
         self.assertEqual(p[5].find("email").text, "prolungatti@uol.com.br")
 
-
-
     def test_convert_elements_which_have_id_pipe_for_asterisk_corresponding_author(
         self
     ):
@@ -1369,7 +1373,6 @@ class TestConversionToCorresp(unittest.TestCase):
         self.assertEqual(xml.find(".//fn/label").text, "*")
         self.assertEqual(xml.find(".//fn/p/email").text, "chrisg@vortex.ufrgs.br")
         self.assertIn("Corresponding author", xml.find(".//fn/p").text, "*")
-
 
 
 class TestConversionToFig(unittest.TestCase):
@@ -1692,6 +1695,7 @@ class TestDeduceAndSuggestConversionPipe(unittest.TestCase):
         for i, node in enumerate(self.xml.findall(xpath)):
             with self.subTest(step + " " + str(i)):
                 self.assertEqual(etree.tostring(node), etree.tostring(expected_node[i]))
+
 
 def test_add_xml_attribs(self):
     expected = """
@@ -2183,9 +2187,7 @@ class TestFnLabelAndPPipe(unittest.TestCase):
     def test__create_label__creates_label(self):
         text = """<root><fn>** TEXTO NOTA</fn></root>"""
         expected = b"""<root><fn><label>**</label>TEXTO NOTA</fn></root>"""
-        expected_final = (
-            b"""<root><fn><label>**</label><p>TEXTO NOTA</p></fn></root>"""
-        )
+        expected_final = b"""<root><fn><label>**</label><p>TEXTO NOTA</p></fn></root>"""
 
         xml = etree.fromstring(text)
         node = xml.find(".//fn")
@@ -2291,14 +2293,10 @@ class TestFnLabelAndPPipe(unittest.TestCase):
         self.assertEqual(xml.find(".//p").text.strip(), "TExto 0")
         self.assertEqual(
             xml.find(".//p/italic").text.strip(),
-            "Isso é conhecido pelos pesquisadores como")
-        self.assertEqual(
-            xml.findall(".//br")[0].tail.strip(),
-            "texto texto texto")
-        self.assertEqual(
-            xml.findall(".//br")[1].tail.strip(),
-            "Email: a@x.org")
-
+            "Isso é conhecido pelos pesquisadores como",
+        )
+        self.assertEqual(xml.findall(".//br")[0].tail.strip(), "texto texto texto")
+        self.assertEqual(xml.findall(".//br")[1].tail.strip(), "Email: a@x.org")
 
 
 class TestRemoveOrMoveStyleTagsPipe(unittest.TestCase):
@@ -2388,7 +2386,6 @@ class TestHTML2SPSPipelineBRPipe(unittest.TestCase):
         xml = etree.fromstring(text)
         text, xml = self.pipe.transform((text, xml))
         self.assertEqual(etree.tostring(xml), b"<root><p><br/></p></root>")
-
 
 
 class TestHTML2SPSPipelineBR2PPipe(unittest.TestCase):

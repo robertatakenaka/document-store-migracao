@@ -69,6 +69,7 @@ def wrap_content_node(_node, elem_wrap="p"):
     _node.tail = None
     _node.insert(0, p)
 
+
 def gera_id(_string, index_body):
     if not _string:
         return
@@ -263,7 +264,7 @@ class HTML2SPSPipeline(object):
                         node.tag = "STRIPTAG"
                     elif node.find("p") is not None:
                         self._move_style_tag_into_children(node)
-                        node.tag ="STRIPTAG"
+                        node.tag = "STRIPTAG"
             etree.strip_tags(xml, "STRIPTAG")
 
         def transform(self, data):
@@ -335,7 +336,6 @@ class HTML2SPSPipeline(object):
                 node.attrib.update(_attrib)
             logger.info("Total de %s tags com style", count)
             return data
-
 
     class BRPipe(plumber.Pipe):
         ALLOWED_IN = [
@@ -453,7 +453,6 @@ class HTML2SPSPipeline(object):
             items = self._executa(xml)
             logger.info("BR2PPipe - fim")
             return data
-
 
     class PPipe(plumber.Pipe):
         TAGS = [
@@ -1889,7 +1888,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 parent.remove(_next)
 
     class FnLabelAndPPipe(plumber.Pipe):
-
         def _create_label(self, node):
             children = node.getchildren()
             node_text = (node.text or "").strip()
@@ -2008,6 +2006,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
         anexos, são identificados como "fn" (notas de rodapé). No entanto,
         podem ser apenas "target"
         """
+
         def transform(self, data):
             raw, xml = data
             for fn in xml.findall(".//fn"):
