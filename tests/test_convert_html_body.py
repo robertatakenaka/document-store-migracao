@@ -1302,7 +1302,6 @@ class TestConversionToCorresp(unittest.TestCase):
             etree.tostring(xml), expected_after_anchor_and_internal_link_pipe
         )
 
-    @unittest.skip("TODO")
     def test__convert_elements_which_have_id_pipe_creates_fn_with_some_paragraphs(self):
         text = """<root>
           <p><a id="nt"></a>
@@ -1327,8 +1326,8 @@ class TestConversionToCorresp(unittest.TestCase):
         text, xml = self.html_pl.RemoveInvalidBRPipe().transform((text, xml))
         text, xml = self.html_pl.BRPipe().transform((text, xml))
         text, xml = self.html_pl.BR2PPipe().transform((text, xml))
-
-        p = xml.findall(".//p")
+        print("RESULTADO", etree.tostring(xml))
+        p = xml.findall(".//fn/p")
         self.assertEqual(xml.find(".//fn/label/bold").text, "Correspondence to:")
         self.assertEqual(p[0].text.strip(), "Maria Auxiliadora Prolungatti Cesar")
         self.assertEqual(
@@ -1337,30 +1336,32 @@ class TestConversionToCorresp(unittest.TestCase):
         )
         self.assertEqual(p[2].text.strip(), "Avenida Granadeiro Guimarães, 270")
         self.assertEqual(p[3].text.strip(), "CEP: 12100-000 – Taubaté (SP), Brazil.")
-        self.assertEqual(p[5].find("email").text, "prolungatti@uol.com.br")
+        self.assertEqual(p[4].find("email").text, "prolungatti@uol.com.br")
 
     def test_convert_elements_which_have_id_pipe_for_asterisk_corresponding_author(
         self
     ):
-        text = """<root><big>Peter M. Gaylarde; Christine C. Gaylarde
-        <a href="#back"><sup>*</sup></a></big>
+        text = """<root><p>Peter M. Gaylarde; Christine C. Gaylarde
+        <a href="#back"><sup>*</sup></a></p>
+        <p>
         <a name="back"></a><a href="#home">*</a> Corresponding author.
         Mailing Address:
         MIRCEN, Departamento de Solos, UFRGS, Caixa Postal 776, CEP 90001-970,
         Porto Alegre, RS, Brasil. Fax (+5551) 316-6029.
         Email
         <a href="mailto:chrisg@vortex.ufrgs.br">chrisg@vortex.ufrgs.br</a>
-        </root>
+        </p></root>
         """
-        expected = b"""<root><big>Peter M. Gaylarde; Christine C. Gaylarde
-        <xref ref-type="fn" rid="back"><sup>*</sup></xref></big>
+        expected = b"""<root><p>Peter M. Gaylarde; Christine C. Gaylarde
+        <xref ref-type="fn" rid="back"><sup>*</sup></xref></p>
+        <p>
         <fn id="back"><label>*</label><p> Corresponding author.
         Mailing Address:
         MIRCEN, Departamento de Solos, UFRGS, Caixa Postal 776, CEP 90001-970,
         Porto Alegre, RS, Brasil. Fax (+5551) 316-6029.
         Email
         <email>chrisg@vortex.ufrgs.br</email>
-        </p></fn></root>"""
+        </p></fn></p></root>"""
         xml = etree.fromstring(text)
         text, xml = self.html_pl.ConvertElementsWhichHaveIdPipe(self.html_pl).transform(
             (text, xml)
@@ -1372,7 +1373,7 @@ class TestConversionToCorresp(unittest.TestCase):
         self.assertEqual(xml.find(".//xref/sup").text, "*")
         self.assertEqual(xml.find(".//fn/label").text, "*")
         self.assertEqual(xml.find(".//fn/p/email").text, "chrisg@vortex.ufrgs.br")
-        self.assertIn("Corresponding author", xml.find(".//fn/p").text, "*")
+        self.assertIn("Corresponding author", xml.find(".//fn/p").text)
 
 
 class TestConversionToFig(unittest.TestCase):
@@ -2299,6 +2300,28 @@ class TestFnLabelAndPPipe(unittest.TestCase):
         self.assertEqual(xml.findall(".//br")[1].tail.strip(), "Email: a@x.org")
 
 
+class TestTargetPipe(unittest.TestCase):
+    def setUp(self):
+        self.html_pl = HTML2SPSPipeline(pid="pid")
+        self.pl = ConvertElementsWhichHaveIdPipeline(self.html_pl)
+        self.pipe = self.pl.FnLabelAndPPipe()
+
+    def test__create_label__does_not_create_label(self):
+        text = """<root><fn>TEXTO NOTA</fn></root>"""
+        expected = b"""<root><fn>TEXTO NOTA</fn></root>"""
+        expected_final = b"""<root><fn><p>TEXTO NOTA</p></fn></root>"""
+        xml = etree.fromstring(text)
+
+        node = xml.find(".//fn")
+        self.pipe._create_label(node)
+        self.assertEqual(node.text, "TEXTO NOTA")
+        self.assertEqual(etree.tostring(xml), expected)
+
+        text, xml = self.pipe.transform((text, xml))
+        fn = xml.find(".//fn")
+        self.assertEqual(fn.find("p").text, "TEXTO NOTA")
+        self.assertIsNone(fn.find("label"))
+
 class TestRemoveOrMoveStyleTagsPipe(unittest.TestCase):
     def setUp(self):
         self.pipeline = HTML2SPSPipeline(pid="pid")
@@ -2366,6 +2389,24 @@ class TestRemoveOrMoveStyleTagsPipe(unittest.TestCase):
     def test_remove_or_move_style_tags_wrap_texto3_with_sup(self):
         text = """<root><sup><p>*texto 2</p> texto 3 </sup></root>"""
         expected = b"""<root><p><sup>*texto 2</sup></p><sup> texto 3 </sup></root>"""
+        raw, transformed = self._transform(text)
+        self.assertEqual(etree.tostring(transformed), expected)
+
+    def test_remove_or_move_style_tags_wrap_texts(self):
+        text = """<root><a id="nt06"/><sup>6</sup>
+        <italic>O conceito de efici&#234;ncia est&#225; associado a bem-estar
+        social. Este tema ser&#225; abordado na se&#231;&#227;o 6 do artigo.
+        <br/>
+        <a id="nt07"/><sup>7</sup> Acrescente-se, ainda, o fato de que,
+        "em estando doente", a demanda por estes servi&#231;os se torna
+        praticamente inel&#225;stica.</italic> <br/></root>"""
+        expected = b"""<root><a id="nt06"/><sup>6</sup>
+        <italic>O conceito de efici&#234;ncia est&#225; associado a bem-estar
+        social. Este tema ser&#225; abordado na se&#231;&#227;o 6 do artigo.
+        <br/>
+        <a id="nt07"/><sup>7</sup> Acrescente-se, ainda, o fato de que,
+        "em estando doente", a demanda por estes servi&#231;os se torna
+        praticamente inel&#225;stica.</italic> <br/></root>"""
         raw, transformed = self._transform(text)
         self.assertEqual(etree.tostring(transformed), expected)
 
