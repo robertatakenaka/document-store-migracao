@@ -1217,6 +1217,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.ImgPipe(super_obj=html_pipeline),
             self.MoveFnPipe(),
             self.AddContentToFnPipe(),
+            self.NotFnPipe(),
             self.FnLabelAndPPipe(),
             self.TargetPipe(),
         )
@@ -1908,6 +1909,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             raw, xml = data
             logger.info("AddContentToFnPipe")
             for fn in xml.findall(".//fn"):
+
                 fn.set("move", "true")
             while True:
                 fn = xml.find(".//fn[@move]")
@@ -1929,6 +1931,14 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     break
                 node.append(deepcopy(_next))
                 parent.remove(_next)
+
+    class NotFnPipe(plumber.Pipe):
+        def transform(self, data):
+            raw, xml = data
+            logger.info("NotFnPipe")
+            for fn in xml.findall(".//fn[graphic]"):
+                fn.tag = "fig"
+            return data
 
     class XXXFnLabelAndPPipe(plumber.Pipe):
         def _create_label(self, node):
@@ -2278,7 +2288,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
         def _is_a_top_target(self, node):
             root = node.getroottree()
             for e in root.findall(".//body/*")[:2]:
-                print(etree.tostring(e))
                 if node in e.findall(".//*"):
                     return True
 
@@ -2436,13 +2445,31 @@ class Document:
     def __init__(self, xmltree):
         self.xmltree = xmltree
 
+    def add_info_to_a_href(self):
+        a_href_items = self.xmltree.findall(".//a[@href]")
+        for i, a in enumerate(a_href_items):
+            text = get_node_text(a).lower()
+            if not text:
+                continue
+            if text[0].isalpha():
+                a.set("title", text)
+            elif text[0].isdigit():
+                try:
+                    label = a_href_items[i - 1].attrib.get("title")
+                except IndexError:
+                    pass
+                else:
+                    if label and label[0].isalpha():
+                        a.set("title", label.split()[0])
+
     @property
     def a_href_items(self):
         texts = {}
         file_paths = {}
+        self.add_info_to_a_href()
         for a_href in self.xmltree.findall(".//a[@href]"):
             href = a_href.attrib.get("href").strip()
-            text = get_node_text(a_href).lower().strip()
+            text = a_href.get("title")
 
             if text:
                 if text not in texts.keys():

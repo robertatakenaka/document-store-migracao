@@ -29,6 +29,7 @@ for disp-formula
 anx app
 ane app
 apx app
+mapa fig
 grf fig
 qdo fig
 qdr fig
