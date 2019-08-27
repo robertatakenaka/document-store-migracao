@@ -108,9 +108,13 @@ def find_or_create_asset_node(root, elem_name, elem_id, node=None):
 
 
 def get_node_text(node):
-    if node is None:
+    try:
+        texts = node.itertext()
+    except (AttributeError, ValueError):
+        # node is Comment or node is None
         return ""
-    return join_texts([item.strip() for item in node.itertext() if item.strip()])
+    else:
+        return join_texts([item.strip() for item in texts if item.strip()])
 
 
 class CustomPipe(plumber.Pipe):
@@ -255,6 +259,8 @@ class HTML2SPSPipeline(object):
                     node_child.tail = ""
                     node_child.addnext(e)
                 # envolve o conteúdo de node_child com a tag de estilo
+                logger.info('_wrap_node_content_with_new_tag')
+                logger.info(etree.tostring(node_child))
                 self._wrap_node_content_with_new_tag(node_child, node.tag)
 
         def _remove_or_move_style_tags(self, xml):
@@ -1431,25 +1437,42 @@ class ConvertElementsWhichHaveIdPipeline(object):
         Corrige id e name caso contenha caracteres nao alphanum.
         """
 
-        def _replace_not_alphanum(self, c):
-            return c if c.isalnum() else "x"
+        def _replace_not_alphanum(self, name):
+            if "<" in name and ">" in name:
+                try:
+                    xml = etree.fromstring("<root>" + name + "</root>")
+                except lxml.etree.XMLSyntaxError:
+                    pass
+                else:
+                    try:
+                        name = xml.find("*").text
+                    except AttributeError:
+                        pass
+                if name.isalnum():
+                    return name
+            return "".join([c if c.isalnum() else "x"
+                            for c in name])
 
-        def replace_not_alphanum(self, name):
-            if name:
-                return "".join([self._replace_not_alphanum(c) for c in name])
+        def assure_valid_href(self, name):
+            if name is None:
+                return
+            if name.isalnum():
+                return name
+            return self._replace_not_alphanum(name)
 
         def parser_node(self, node):
-            _id = self.replace_not_alphanum(node.attrib.get("id"))
-            _name = self.replace_not_alphanum(node.attrib.get("name"))
+            _id = self.assure_valid_href(node.attrib.get("id"))
+            _name = self.assure_valid_href(node.attrib.get("name"))
             node.set("id", _name or _id)
             node.set("name", _name or _id)
             href = node.attrib.get("href")
             if href and href[0] == "#":
+
                 a = etree.Element("a")
                 a.set("name", node.attrib.get("name"))
                 a.set("id", node.attrib.get("id"))
                 node.addprevious(a)
-                node.set("href", "#" + self.replace_not_alphanum(href[1:]))
+                node.set("href", "#" + self.assure_valid_href(href[1:]))
                 node.attrib.pop("id")
                 node.attrib.pop("name")
 
@@ -1933,16 +1956,13 @@ class ConvertElementsWhichHaveIdPipeline(object):
             b'<fn id="back2"><italic>** Address: Rua Itapeva 366 conj 132 - 01332-000 S&#227;o Paulo SP - Brasil.</italic></fn>'
             """
             node_text = get_node_text(node)
-            print(node_text)
             label_text = self._find_label_text(node_text)
-            print(label_text)
             children = node.getchildren()
             if label_text:
                 if node.text and node.text.strip().startswith(label_text):
                     label = etree.Element("label")
                     label.text = label_text
                     node.insert(0, label)
-                    print(etree.tostring(node))
                     label.tail = node.text.replace(label_text, "")
                     node.text = ""
                 elif children[0].text.strip() == label_text.strip():
@@ -2091,16 +2111,16 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 label = etree.Element("label")
                 label.text = label_text
                 node.insert(0, label)
-                for child in node.getchildren()[1:]:
-                    if child.text.startswith(label_text):
+                for child in node.getchildren()[1].findall(".//*"):
+                    if child.text and child.text.startswith(label_text):
                         child.text = child.text.replace(label_text, "")
                         break
 
-        def _create_label_from_bold_or_sup(self, node):
+        def _create_label_from_style_tags(self, node):
             node_text = get_node_text(node)
             children = node.getchildren()
             styles = []
-            for tag in ["sup", "bold"]:
+            for tag in ["sup", "bold", "italic"]:
                 node_style = node.find(".//{}".format(tag))
                 if node_style is not None:
                     if node_style in [children[0], children[0].find(".//{}".format(tag))]:
@@ -2210,7 +2230,9 @@ class ConvertElementsWhichHaveIdPipeline(object):
             for fn in xml.findall(".//fn"):
                 _is_target = self._is_target(fn)
                 if _is_target:
-                    if fn.getchildren() or get_node_text(fn):
+                    if self._is_a_top_target(fn):
+                        fn.tag = "REMOVE_TAG"
+                    elif fn.getchildren() or get_node_text(fn):
                         target = etree.Element("target")
                         for k, v in fn.attrib.items():
                             target.set(k, v)
@@ -2223,6 +2245,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
                         fn.tag = "target"
                     logger.info("target resultado:")
                     logger.info(etree.tostring(fn))
+            self._remove_target_in_assets(xml)
             etree.strip_tags(xml, "REMOVE_TAG")
             return data
 
@@ -2232,7 +2255,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 logger.info("label && p")
                 # print("label && p")
                 return False
-
             root = node.getroottree()
             items = [e.findall(".//fn") for e in root.findall(".//body/*")]
             fn_items = []
@@ -2252,6 +2274,19 @@ class ConvertElementsWhichHaveIdPipeline(object):
             # print(fn_items)
             if node not in fn_items:
                 return True
+
+        def _is_a_top_target(self, node):
+            root = node.getroottree()
+            for e in root.findall(".//body/*")[:2]:
+                print(etree.tostring(e))
+                if node in e.findall(".//*"):
+                    return True
+
+        def _remove_target_in_assets(self, xml):
+            for tag in ["table-wrap", "fig", "disp-formula"]:
+                for n in xml.findall(".//{}".format(tag)):
+                    for target in n.findall(".//target"):
+                        target.tag = "REMOVE_TAG"
 
 
 class AssetInHTMLPage:
