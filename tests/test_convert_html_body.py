@@ -2392,6 +2392,12 @@ class TestRemoveOrMoveStyleTagsPipe(unittest.TestCase):
         raw, transformed = self._transform(text)
         self.assertEqual(etree.tostring(transformed), expected)
 
+    def test_remove_or_move_style_tags_move_sup_into_a(self):
+        text = """<root><sup><a href="#fn01">*texto 2</a></sup></root>"""
+        expected = b"""<root><a href="#fn01"><sup>*texto 2</sup></a></root>"""
+        raw, transformed = self._transform(text)
+        self.assertEqual(etree.tostring(transformed), expected)
+
     def test_remove_or_move_style_tags_wrap_texts(self):
         text = """<root><a id="nt06"/><sup>6</sup>
         <italic>O conceito de efici&#234;ncia est&#225; associado a bem-estar
