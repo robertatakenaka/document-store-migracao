@@ -550,10 +550,8 @@ class TestHTML2SPSPipeline(unittest.TestCase):
         text, xml = self.pipeline.RemoveInvalidBRPipe().transform((text, xml))
         text, xml = self.pipeline.BRPipe().transform((text, xml))
         text, xml = self.pipeline.BR2PPipe().transform((text, xml))
-
-        print(etree.tostring(xml))
         fn = xml.findall(".//fn")
-        self.assertEqual(fn[0].find("label").text, "*")
+        self.assertEqual(fn[0].find("label").text.strip(), "*")
         self.assertEqual(fn[1].find("label").text, "1")
         self.assertEqual(fn[2].find("label").text, "2")
         self.assertEqual(fn[3].find("label").text, "3")
@@ -628,8 +626,6 @@ class Test_RemovePWhichIsParentOfPPipe_Case1(unittest.TestCase):
 
         data = self.text, self.xml
         raw, transformed = self.pipe.transform(data)
-        print("?????", etree.tostring(transformed))
-
         self.assertEqual(len(transformed.findall(".//body//p")), 2)
         self.assertEqual(len(transformed.findall(".//body//*")), 2)
         self._compare_tags_and_texts(transformed, expected)
@@ -1186,12 +1182,12 @@ class TestConversionToAnnex(unittest.TestCase):
         pl = ConvertElementsWhichHaveIdPipeline(htmlpl)
         text, xml = pl.DeduceAndSuggestConversionPipe(htmlpl).transform((text, xml))
         self.assertEqual(
-            etree.tostring(xml),
+            etree.tostring(xml).split(),
             b"""<root>
-        <a href="#anx01" xml_tag="app" xml_reftype="app" xml_id="anx01" xml_label="anexo 1">Anexo 1</a>
+        <a href="#anx01" title="anexo 1" xml_tag="app" xml_reftype="app" xml_id="anx01" xml_label="anexo 1">Anexo 1</a>
         <p><a name="anx01" id="anx01" xml_tag="app" xml_reftype="app" xml_id="anx01" xml_label="anexo 1"/></p>
         <p><img src="/img/revistas/trends/v33n3/a05tab01.jpg" xml_tag="app" xml_reftype="app" xml_id="anx01" xml_label="anexo 1"/></p>
-        </root>""",
+        </root>""".split(),
         )
 
         text, xml = pl.ApplySuggestedConversionPipe(htmlpl).transform((text, xml))
@@ -1326,7 +1322,6 @@ class TestConversionToCorresp(unittest.TestCase):
         text, xml = self.html_pl.RemoveInvalidBRPipe().transform((text, xml))
         text, xml = self.html_pl.BRPipe().transform((text, xml))
         text, xml = self.html_pl.BR2PPipe().transform((text, xml))
-        print("RESULTADO", etree.tostring(xml))
         p = xml.findall(".//fn/p")
         self.assertEqual(xml.find(".//fn/label/bold").text, "Correspondence to:")
         self.assertEqual(p[0].text.strip(), "Maria Auxiliadora Prolungatti Cesar")
@@ -1371,7 +1366,7 @@ class TestConversionToCorresp(unittest.TestCase):
         text, xml = self.html_pl.BR2PPipe().transform((text, xml))
 
         self.assertEqual(xml.find(".//xref/sup").text, "*")
-        self.assertEqual(xml.find(".//fn/label").text, "*")
+        self.assertEqual(xml.find(".//fn/label").text.strip(), "*")
         self.assertEqual(xml.find(".//fn/p/email").text, "chrisg@vortex.ufrgs.br")
         self.assertIn("Corresponding author", xml.find(".//fn/p").text)
 
@@ -1397,7 +1392,7 @@ class TestConversionToFig(unittest.TestCase):
         text, xml = pl.DeduceAndSuggestConversionPipe(html_pl).transform((text, xml))
         _xml = etree.tostring(xml)
         self.assertIn(
-            b'<a href="#fig01en" xml_tag="fig" xml_reftype="fig" xml_id="fig01en" xml_label="figure 1">Figure 1</a>',
+            b'<a href="#fig01en" title="figure 1" xml_tag="fig" xml_reftype="fig" xml_id="fig01en" xml_label="figure 1">Figure 1</a>',
             _xml,
         )
         self.assertIn(
@@ -1680,9 +1675,8 @@ class TestDeduceAndSuggestConversionPipe(unittest.TestCase):
             {
                 "tabela 1": ([nodes[0], nodes[1]], []),
                 "figure 1": ([], [nodes[3]]),
-                "2": ([], [nodes[4]]),
-                "figure 3": ([], [nodes[5]]),
-                "3": ([], [nodes[6]]),
+                "figure 2": ([], [nodes[4]]),
+                "figure 3": ([], [nodes[5], nodes[6]]),
             },
         )
         self.assertEqual(
@@ -2176,8 +2170,10 @@ class TestFnLabelAndPPipe(unittest.TestCase):
         xml = etree.fromstring(text)
 
         node = xml.find(".//fn")
-        self.pipe._create_label(node)
+        new_fn = etree.Element("new_fn")
+        self.pipe._create_label(new_fn, node)
         self.assertEqual(node.text, "TEXTO NOTA")
+        self.assertEqual(new_fn.find("label"), None)
         self.assertEqual(etree.tostring(xml), expected)
 
         text, xml = self.pipe.transform((text, xml))
@@ -2187,18 +2183,20 @@ class TestFnLabelAndPPipe(unittest.TestCase):
 
     def test__create_label__creates_label(self):
         text = """<root><fn>** TEXTO NOTA</fn></root>"""
-        expected = b"""<root><fn><label>**</label>TEXTO NOTA</fn></root>"""
-        expected_final = b"""<root><fn><label>**</label><p>TEXTO NOTA</p></fn></root>"""
+        expected = b"""<root><fn>TEXTO NOTA</fn></root>"""
 
         xml = etree.fromstring(text)
         node = xml.find(".//fn")
 
-        self.pipe._create_label(node)
-        label = node.find("label")
-        self.assertEqual(label.tail, "TEXTO NOTA")
-        self.assertEqual(label.text, "**")
+        new_fn = etree.Element("new_fn")
+        self.pipe._create_label(new_fn, node)
+        self.assertEqual(new_fn.find("label").text, "**")
         self.assertEqual(etree.tostring(xml), expected)
 
+    def test__transform__creates_label_and_p(self):
+        text = """<root><fn>** TEXTO NOTA</fn></root>"""
+        xml = etree.fromstring(text)
+        expected_final = b"""<root><fn><label>**</label><p>TEXTO NOTA</p></fn></root>"""
         text, xml = self.pipe.transform((text, xml))
         fn = xml.find(".//fn")
         self.assertEqual(fn.find("p").text, "TEXTO NOTA")
@@ -2206,22 +2204,26 @@ class TestFnLabelAndPPipe(unittest.TestCase):
 
     def test__create_label__creates_label_from_style_tag(self):
         text = """<root><fn><sup>**</sup> TEXTO NOTA</fn></root>"""
-        expected = b"""<root><fn><label><sup>**</sup></label> TEXTO NOTA</fn></root>"""
+        expected = b"""<root><fn> TEXTO NOTA</fn></root>"""
+        xml = etree.fromstring(text)
+        node = xml.find(".//fn")
+        new_fn = etree.Element("new_fn")
+        self.pipe._create_label(new_fn, node)
+        label = new_fn.find("label")
+        self.assertEqual(label.find("sup").text, "**")
+        self.assertEqual(etree.tostring(xml), expected)
+
+    def test__transform_creates_label_sup_and_p(self):
+        text = """<root><fn><sup>**</sup> TEXTO NOTA</fn></root>"""
         expected_final = (
-            b"""<root><fn><label><sup>**</sup></label><p>TEXTO NOTA</p></fn></root>"""
+            b"""<root><fn><label><sup>**</sup></label><p> TEXTO NOTA</p></fn></root>"""
         )
         xml = etree.fromstring(text)
         node = xml.find(".//fn")
 
-        self.pipe._create_label(node)
-        label = node.find("label")
-        self.assertEqual(label.tail, " TEXTO NOTA")
-        self.assertEqual(label.find("sup").text, "**")
-        self.assertEqual(etree.tostring(xml), expected)
-
         text, xml = self.pipe.transform((text, xml))
         fn = xml.find(".//fn")
-        self.assertEqual(fn.find("p").text, "TEXTO NOTA")
+        self.assertEqual(fn.find("p").text, " TEXTO NOTA")
         self.assertEqual(fn.find("label/sup").text, "**")
 
     def test__transform_wraps_italic_with_p(self):
@@ -2313,10 +2315,13 @@ class TestTargetPipe(unittest.TestCase):
         xml = etree.fromstring(text)
 
         node = xml.find(".//fn")
-        self.pipe._create_label(node)
+        new_fn = etree.Element("fn")
+        self.pipe._create_label(new_fn, node)
         self.assertEqual(node.text, "TEXTO NOTA")
         self.assertEqual(etree.tostring(xml), expected)
 
+        text = """<root><fn>TEXTO NOTA</fn></root>"""
+        xml = etree.fromstring(text)
         text, xml = self.pipe.transform((text, xml))
         fn = xml.find(".//fn")
         self.assertEqual(fn.find("p").text, "TEXTO NOTA")
@@ -2375,8 +2380,8 @@ class TestRemoveOrMoveStyleTagsPipe(unittest.TestCase):
         self.assertEqual(etree.tostring(transformed), expected)
 
     def test_remove_or_move_style_tags_does_nothing(self):
-        text = """<root><sup><italic>texto 4</italic></sup></root>"""
-        expected = b"""<root><sup><italic>texto 4</italic></sup></root>"""
+        text = """<root><sup><i>texto 4</i></sup></root>"""
+        expected = b"""<root><sup><i>texto 4</i></sup></root>"""
         raw, transformed = self._transform(text)
         self.assertEqual(etree.tostring(transformed), expected)
 
