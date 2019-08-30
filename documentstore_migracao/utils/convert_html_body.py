@@ -131,7 +131,6 @@ class HTML2SPSPipeline(object):
     def __init__(self, pid, index_body=1):
         self.pid = pid
         self.index_body = index_body
-        self.document = Document(None)
         self._ppl = plumber.Pipeline(
             self.SetupPipe(super_obj=self),
             self.SaveRawBodyPipe(super_obj=self),
@@ -1207,7 +1206,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
         self._ppl = plumber.Pipeline(
             self.SetupPipe(),
             self.RemoveThumbImgPipe(),
-            self.AddNameAndIdToElementAPipe(super_obj=html_pipeline),
+            self.AddNameAndIdToElementAPipe(),
+            self.AddTitleToElementAPipe(),
             self.RemoveInvalidAnchorAndLinksPipe(),
             self.DeduceAndSuggestConversionPipe(super_obj=html_pipeline),
             self.ApplySuggestedConversionPipe(super_obj=html_pipeline),
@@ -1312,8 +1312,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
         def transform(self, data):
             raw, xml = data
-            self.super_obj.document.xmltree = xml
-            a_href_texts, file_paths = self.super_obj.document.a_href_items
+            document = Document(xml)
+            a_href_texts, file_paths = document.a_href_items
             for path, nodes in file_paths.items():
                 if nodes[0].attrib.get("xml_tag"):
                     self._create_asset_group(nodes[0])
@@ -1436,10 +1436,15 @@ class ConvertElementsWhichHaveIdPipeline(object):
             _process(xml, "img", self.parser_node)
             return data
 
-    class AddNameAndIdToElementAPipe(CustomPipe):
+    class AddNameAndIdToElementAPipe(plumber.Pipe):
         """Garante que todos os elemento a[@name] e a[@id] tenham @name e @id.
         Corrige id e name caso contenha caracteres nao alphanum.
         """
+        def _fix_a_href(self, xml):
+            for a in xml.findall(".//a[@name]"):
+                name = a.attrib.get("name")
+                for a_href in xml.findall(".//a[@href='{}']".format(name)):
+                    a_href.set("href", "#" + name)
 
         def _replace_not_alphanum(self, name):
             if "<" in name and ">" in name:
@@ -1481,9 +1486,50 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
         def transform(self, data):
             raw, xml = data
+            self._fix_a_href(xml)
             _process(xml, "a[@id]", self.parser_node)
             _process(xml, "a[@name]", self.parser_node)
             return data
+
+    class AddTitleToElementAPipe(plumber.Pipe):
+
+        def add_title_to_a_href(self, xml):
+            a_href_items = xml.findall(".//a[@href]")
+            for i, node in enumerate(a_href_items):
+                text = get_node_text(node).lower()
+                if not text:
+                    continue
+                if text[0].isalpha():
+                    node.set("title", text)
+                elif text[0].isdigit():
+                    try:
+                        previous_title = a_href_items[i - 1].get("title")
+                    except IndexError:
+                        pass
+                    else:
+                        if (a_href_items[i - 1].get("href")[1] == node.get("href")[1] or
+                            a_href_items[i - 1].get("href") == node.get("href")):
+                            if previous_title and previous_title[0].isalpha():
+                                label = previous_title.split()[0]
+                                node.set("title", label + " " + text)
+
+        def add_title_to_other_a(self, xml):
+            for node in xml.findall(".//a[@title]"):
+                title = node.get("title")
+                href = node.get("href")
+                for n in xml.findall(".//a[@href='{}']".format(href)):
+                    if not n.get("title"):
+                        n.set("title", title)
+                for n in xml.findall(".//a[@name='{}']".format(href[1:])):
+                    if not n.get("title"):
+                        n.set("title", title)
+
+        def transform(self, data):
+            raw, xml = data
+            self.add_title_to_a_href(xml)
+            self.add_title_to_other_a(xml)
+            return data
+
 
     class DeduceAndSuggestConversionPipe(CustomPipe):
         """Este pipe analisa os dados doss elementos a[@href] e a[@name],
@@ -1510,6 +1556,14 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 node.set("xml_label", text)
 
         def _add_xml_attribs_to_a_href_from_text(self, texts):
+            """
+            De acordo com o a[@title] e/ou a.text,
+            adiciona no elemento a, atributos:
+            xml_tag
+            xml_id
+            xml_reftype
+            xml_label
+            """
             for text, data in texts.items():
                 nodes_with_id, nodes_without_id = data
                 tag_reftype = self.inferer.tag_and_reftype_from_a_href_text(text)
@@ -1553,6 +1607,14 @@ class ConvertElementsWhichHaveIdPipeline(object):
             return complete, incomplete
 
         def _add_xml_attribs_to_a_href_from_file_paths(self, file_paths):
+            """
+            De acordo com o a[@href] cujo conteúdo é nome de arquivo,
+            adiciona no elemento a, atributos:
+            xml_tag
+            xml_id
+            xml_reftype
+            xml_label
+            """
             for path, nodes in file_paths.items():
                 new_id = None
                 complete, incomplete = self._classify_nodes(nodes)
@@ -1571,6 +1633,14 @@ class ConvertElementsWhichHaveIdPipeline(object):
                         self._update(node, tag, reftype, new_id, text)
 
         def _add_xml_attribs_to_a_name(self, a_names):
+            """
+            De acordo com o a[@name],
+            adiciona no elemento a, atributos:
+            xml_tag
+            xml_id
+            xml_reftype
+            xml_label
+            """
             for name, a_name_and_hrefs in a_names.items():
                 new_id = None
                 a_name, a_hrefs = a_name_and_hrefs
@@ -1608,6 +1678,14 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     return found
 
         def _add_xml_attribs_to_img(self, images):
+            """
+            De acordo com o img[@src],
+            adiciona no elemento a, atributos:
+            xml_tag
+            xml_id
+            xml_reftype
+            xml_label
+            """
             for path, images in images.items():
                 text, new_id, tag, reftype = None, None, None, None
                 tag_reftype_id = self.inferer.tag_and_reftype_and_id_from_filepath(path)
@@ -1626,11 +1704,10 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
         def transform(self, data):
             raw, xml = data
-            self.super_obj.document.xmltree = xml
-            self.super_obj.document.add_info_to_a_href()
-            texts, file_paths = self.super_obj.document.a_href_items
-            names = self.super_obj.document.a_names
-            images = self.super_obj.document.images
+            document = Document(xml)
+            texts, file_paths = document.a_href_items
+            names = document.a_names
+            images = document.images
             self._add_xml_attribs_to_a_href_from_text(texts)
             self._add_xml_attribs_to_a_name(names)
             self._add_xml_attribs_to_a_href_from_file_paths(file_paths)
@@ -1645,12 +1722,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
         Também remover duplicidade de a[@name]
         """
 
-        def _fix_a_href(self, xml):
-            for a in xml.findall(".//a[@name]"):
-                name = a.attrib.get("name")
-                for a_href in xml.findall(".//a[@href='{}']".format(name)):
-                    a_href.set("href", "#" + name)
-
         def _identify_order(self, xml):
             items_by_id = {}
             for a in xml.findall(".//a"):
@@ -1662,8 +1733,10 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 if _id:
                     items_by_id[_id] = items_by_id.get(_id, [])
                     items_by_id[_id].append(a)
-
             return items_by_id
+
+        def _mark_as_fn_label(self, node):
+            node.tag = "label"
 
         def _exclude(self, items_by_id):
             for _id, nodes in items_by_id.items():
@@ -1673,15 +1746,14 @@ class ConvertElementsWhichHaveIdPipeline(object):
                         nodes.remove(n)
                         parent = n.getparent()
                         parent.remove(n)
-                if len(nodes) >= 2 and nodes[0].attrib.get("name"):
-                    for n in nodes:
-                        _remove_element_or_comment(n)
+                if nodes[0].attrib.get("name"):
+                    for n in nodes[1:]:
+                        self._mark_as_fn_label(n)
                 if len(nodes) == 1 and nodes[0].attrib.get("href"):
                     _remove_element_or_comment(nodes[0])
 
         def transform(self, data):
             raw, xml = data
-            self._fix_a_href(xml)
             items_by_id = self._identify_order(xml)
             self._exclude(items_by_id)
             return data
@@ -1719,8 +1791,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
         def transform(self, data):
             raw, xml = data
-            self.super_obj.document.xmltree = xml
-            for name, a_name_and_hrefs in self.super_obj.document.a_names.items():
+            document = Document(xml)
+            for name, a_name_and_hrefs in document.a_names.items():
                 a_name, a_hrefs = a_name_and_hrefs
                 if a_name.attrib.get("xml_id"):
                     new_id = a_name.attrib.get("xml_id")
@@ -1968,6 +2040,9 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
     class FnLabelAndPPipe(plumber.Pipe):
         def _create_label(self, new_fn, node):
+            if node.find(".//label"):
+                return
+
             children = node.getchildren()
             node_text = (node.text or "").strip()
             if node_text:
@@ -2309,30 +2384,10 @@ class Document:
     def __init__(self, xmltree):
         self.xmltree = xmltree
 
-    def add_info_to_a_href(self):
-        a_href_items = self.xmltree.findall(".//a[@href]")
-        for i, a in enumerate(a_href_items):
-            text = get_node_text(a).lower()
-            if not text:
-                continue
-            if text[0].isalpha():
-                a.set("title", text)
-            elif text[0].isdigit():
-                try:
-                    previous_title = a_href_items[i - 1].get("title")
-                except IndexError:
-                    pass
-                else:
-                    if a_href_items[i - 1].get("href")[1] == a.get("href")[1]:
-                        if previous_title and previous_title[0].isalpha():
-                            label = previous_title.split()[0]
-                            a.set("title", label + " " + text)
-
     @property
     def a_href_items(self):
         texts = {}
         file_paths = {}
-        self.add_info_to_a_href()
         for a_href in self.xmltree.findall(".//a[@href]"):
             href = a_href.attrib.get("href").strip()
             text = a_href.get("title")
