@@ -1212,12 +1212,13 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.RemoveThumbImgPipe(),
             self.AddNameAndIdToElementAPipe(),
             self.AddTitleToElementAPipe(),
+            self.AddHrefToStyleTagsPipe(),
             self.RemoveInvalidAnchorAndLinksPipe(),
             self.DeduceAndSuggestConversionPipe(super_obj=html_pipeline),
             self.ApplySuggestedConversionPipe(super_obj=html_pipeline),
             self.AddAssetInfoToTablePipe(super_obj=html_pipeline),
             self.CreateAssetElementsFromExternalLinkElementsPipe(
-                super_obj=html_pipeline
+                 super_obj=html_pipeline
             ),
             self.CreateAssetElementsFromImgOrTableElementsPipe(super_obj=html_pipeline),
             self.APipe(super_obj=html_pipeline),
@@ -1501,6 +1502,11 @@ class ConvertElementsWhichHaveIdPipeline(object):
         def add_title_to_a_href(self, xml):
             a_href_items = xml.findall(".//a[@href]")
             for i, node in enumerate(a_href_items):
+                logger.info(etree.tostring(node))
+                text = ""
+                href = node.get("href")
+                if href[0] not in ["#", "/"]:
+                    continue
                 text = get_node_text(node).lower()
                 if not text:
                     continue
@@ -1509,14 +1515,16 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 elif text[0].isdigit():
                     try:
                         previous_title = a_href_items[i - 1].get("title")
+                        previous_href = a_href_items[i - 1].get("href")
                     except IndexError:
                         pass
                     else:
-                        if (a_href_items[i - 1].get("href")[1] == node.get("href")[1] or
-                            a_href_items[i - 1].get("href") == node.get("href")):
-                            if previous_title and previous_title[0].isalpha():
+                        if previous_title:
+                            if (previous_href == node.get("href") or
+                               previous_href[:-len(text)] == node.get("href")[:-len(text)]):
                                 label = previous_title.split()[0]
                                 node.set("title", label + " " + text)
+                                logger.info(etree.tostring(node))
 
         def add_title_to_other_a(self, xml):
             for node in xml.findall(".//a[@title]"):
@@ -1532,13 +1540,32 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
         def transform(self, data):
             raw, xml = data
+            logger.info("AddTitleToElementAPipe")
             self.add_title_to_a_href(xml)
             self.add_title_to_other_a(xml)
             return data
 
+    class AddHrefToStyleTagsPipe(plumber.Pipe):
+        def add_href(self, xml):
+            titles = {}
+            for node in xml.findall(".//a[@href]"):
+                title = node.get("title")
+                if title:
+                    titles[title] = titles.get(title, [])
+                    titles[title].append(node)
+            for style_node in xml.findall(".//bold"):
+                text = (style_node.text or "").strip().lower()
+                elem = titles.get(text)
+                if elem is not None:
+                    style_node.set("href", elem[0].get("href"))
+
+        def transform(self, data):
+            raw, xml = data
+            self.add_href(xml)
+            return data
 
     class DeduceAndSuggestConversionPipe(CustomPipe):
-        """Este pipe analisa os dados doss elementos a[@href] e a[@name],
+        """Este pipe analisa os dados dos elementos a[@href] e a[@name],
         deduz e sugere tag, id, ref-type para a conversão de elementos,
         adicionando aos elementos a, os atributos: @xml_tag, @xml_id,
         @xml_reftype, @xml_label.
@@ -1761,17 +1788,25 @@ class ConvertElementsWhichHaveIdPipeline(object):
         def _exclude(self, items_by_id):
             for _id, nodes in items_by_id.items():
                 repeated = [n for n in nodes if n.attrib.get("name")]
+                # remove os a[@name] repetidos
                 if len(repeated) > 1:
                     for n in repeated[1:]:
                         nodes.remove(n)
                         parent = n.getparent()
                         parent.remove(n)
+                # remove os a[@href] se a[@name] aparece antes,
+                # exceto se a[@href] serão convertidos a "fn" (notas de rodapé)
+                # entao a[@href] são convertidos em label
                 if nodes[0].attrib.get("name"):
+                    nodes[0].tag = "REMOVE_TAG"
                     for n in nodes[1:]:
                         if n.get("href") and get_node_text(n) and not n.get("title"):
+                            logger.info(etree.tostring(n))
                             n.tag = "label"
-                            nodes[0].tag = "REMOVE_TAG"
-                            etree.strip_tags(nodes[0], "REMOVE_TAG")
+                            logger.info(etree.tostring(n))
+                        else:
+                            _remove_element_or_comment(n)
+                    etree.strip_tags(nodes[0], "REMOVE_TAG")
                 if len(nodes) == 1 and nodes[0].attrib.get("href"):
                     _remove_element_or_comment(nodes[0])
 
@@ -2010,24 +2045,30 @@ class ConvertElementsWhichHaveIdPipeline(object):
             raw, xml = data
             logger.info("FixLabel")
             for label in xml.findall(".//label[@href]"):
-                fn = None
-                previous = label.getprevious()
-                if previous is None:
-                    parent = label.getparent()
-                    if parent.getchildren()[0] is label and not (parent.text or "").strip():
+                elem = xml.find(".//*[@id='{}']".format(label.get("href")))
+                if elem is not None:
+                    label.addprevious(deepcopy(elem))
+                    parent = elem.getparent()
+                    parent.remove(elem)
+                else:
+                    fn = None
+                    previous = label.getprevious()
+                    if previous is None:
+                        parent = label.getparent()
+                        if parent.getchildren()[0] is label and not (parent.text or "").strip():
+                            fn = etree.Element("fn")
+                    elif previous.tag != "fn" and not (previous.tail or "").strip():
                         fn = etree.Element("fn")
-                elif previous.tag != "fn" and not (previous.tail or "").strip():
-                    fn = etree.Element("fn")
-                if fn is not None:
-                    number = []
-                    for x in label.get("href")[1:][::-1]:
-                        if x.isdigit():
-                            number.insert(0, x)
-                        else:
-                            if len(x) > 0:
-                                break
-                    fn.set("id", "fn" + "".join(number))
-                    label.addprevious(fn)
+                    if fn is not None:
+                        number = []
+                        for x in label.get("href")[1:][::-1]:
+                            if x.isdigit():
+                                number.insert(0, x)
+                            else:
+                                if len(x) > 0:
+                                    break
+                        fn.set("id", "fn" + "".join(number))
+                        label.addprevious(fn)
                 label.attrib.pop("href")
             return data
 

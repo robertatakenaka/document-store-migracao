@@ -51,6 +51,7 @@ def convert_article_ALLxml():
 
         try:
             logger.info(file_xml)
+            print(file_xml)
             convert_article_xml(
                 os.path.join(config.get("SOURCE_PATH"), file_xml))
         except Exception as ex:
