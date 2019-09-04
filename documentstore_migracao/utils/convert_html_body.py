@@ -264,8 +264,6 @@ class HTML2SPSPipeline(object):
                     node_child.tail = ""
                     node_child.addnext(e)
                 # envolve o conteúdo de node_child com a tag de estilo
-                logger.info('_wrap_node_content_with_new_tag')
-                logger.info(etree.tostring(node_child))
                 self._wrap_node_content_with_new_tag(node_child, node.tag)
 
         def _remove_or_move_style_tags(self, xml):
@@ -1126,11 +1124,6 @@ class HTML2SPSPipeline(object):
                         new_child.append(deepcopy(child))
                         child.addprevious(new_child)
                         body.remove(child)
-                    elif child.tail:
-                        new_child = etree.Element("p")
-                        new_child.text = child.tail.strip()
-                        child.tail = child.tail.replace(new_child.text, "")
-                        child.addnext(new_child)
             return data
 
 
@@ -1500,31 +1493,31 @@ class ConvertElementsWhichHaveIdPipeline(object):
     class AddTitleToElementAPipe(plumber.Pipe):
 
         def add_title_to_a_href(self, xml):
-            a_href_items = xml.findall(".//a[@href]")
-            for i, node in enumerate(a_href_items):
-                logger.info(etree.tostring(node))
-                text = ""
+            previous_title = None
+            previous = None
+            for i, node in enumerate(xml.findall(".//a[@href]")):
                 href = node.get("href")
-                if href[0] not in ["#", "/"]:
+                if ":" in href:
                     continue
                 text = get_node_text(node).lower()
                 if not text:
                     continue
-                if text[0].isalpha():
-                    node.set("title", text)
-                elif text[0].isdigit():
-                    try:
-                        previous_title = a_href_items[i - 1].get("title")
-                        previous_href = a_href_items[i - 1].get("href")
-                    except IndexError:
-                        pass
-                    else:
-                        if previous_title:
-                            if (previous_href == node.get("href") or
-                               previous_href[:-len(text)] == node.get("href")[:-len(text)]):
-                                label = previous_title.split()[0]
-                                node.set("title", label + " " + text)
-                                logger.info(etree.tostring(node))
+                node.set("title", text)
+                previous_href = None
+                if previous is not None:
+                    previous_href = previous.get("href")
+                if (text[0].isdigit() and previous_title and
+                        previous_title[0].isalpha() and previous_href):
+                    pos = - len(text)
+
+                    if (previous_href == node.get("href") or
+                            previous_href[:pos] == node.get("href")[:pos]):
+                        label = previous_title.split()[0]
+                        node.set("title", label + " " + text)
+                        logger.info(etree.tostring(previous))
+                        logger.info(etree.tostring(node))
+                previous_title = text
+                previous = node
 
         def add_title_to_other_a(self, xml):
             for node in xml.findall(".//a[@title]"):
@@ -1553,11 +1546,12 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 if title:
                     titles[title] = titles.get(title, [])
                     titles[title].append(node)
-            for style_node in xml.findall(".//bold"):
-                text = (style_node.text or "").strip().lower()
-                elem = titles.get(text)
-                if elem is not None:
-                    style_node.set("href", elem[0].get("href"))
+            for style_tag in ["bold", "sup"]:
+                for style_node in xml.findall(".//{}".format(style_tag)):
+                    text = (style_node.text or "").strip().lower()
+                    elem = titles.get(text)
+                    if elem is not None:
+                        style_node.set("href", elem[0].get("href"))
 
         def transform(self, data):
             raw, xml = data
@@ -1759,17 +1753,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
             for node in xml.findall(".//p[a]"):
                 if len(node.getchildren()) == 1 and not get_node_text(node):
                     node.tag = "REMOVE_TAG"
-                    fn = node.find("a")
-                    # for i, item in enumerate(fn_items):
-                    #     if fn is item:
-                    #         try:
-                    #             next_fn = fn_items[i+1]
-                    #         except IndexError:
-                    #             pass
-                    #         else:
-                    #             next_fn.addprevious(deepcopy(fn))
-                    #             fn.tag = "REMOVE_TAG"
-                    #         break
             etree.strip_tags(xml, "REMOVE_TAG")
 
         def _identify_order(self, xml):
@@ -1786,6 +1769,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             return items_by_id
 
         def _exclude(self, items_by_id):
+            root = None
             for _id, nodes in items_by_id.items():
                 repeated = [n for n in nodes if n.attrib.get("name")]
                 # remove os a[@name] repetidos
@@ -1800,9 +1784,14 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 if nodes[0].attrib.get("name"):
                     nodes[0].tag = "REMOVE_TAG"
                     for n in nodes[1:]:
-                        if n.get("href") and get_node_text(n) and not n.get("title"):
+                        title = n.get("title")
+                        if n.get("href") and not title and title[0].isalpha():
+                            root = root or n.getroottree()
                             logger.info(etree.tostring(n))
                             n.tag = "label"
+                            for item in root.findall(".//a[@title='{}']".format(title)):
+                                if item.get("name"):
+                                    n.set("rid", item.get("name"))
                             logger.info(etree.tostring(n))
                         else:
                             _remove_element_or_comment(n)
@@ -1994,10 +1983,10 @@ class ConvertElementsWhichHaveIdPipeline(object):
         def transform(self, data):
             raw, xml = data
             self._fix_fn_position(xml)
+            self._remove_p_if_fn_is_only_child(xml)
             return data
 
         def _fix_fn_position(self, xml):
-            fn_items = xml.findall(".//fn")
             changed = True
             while changed:
                 changed = False
@@ -2006,6 +1995,12 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     ret = self._move_fn_out(xml)
                     if ret:
                         changed = True
+
+        def _remove_p_if_fn_is_only_child(self, xml):
+            for p in xml.findall(".//p[fn]"):
+                if len(p.getchildren()) == 1 and not get_node_text(p):
+                    p.tag = "REMOVE_TAG"
+            etree.strip_tags(xml, "REMOVE_TAG")
 
         def _identify_nodes_to_move_out(self, xml, style_tag):
             for node in xml.findall(".//{}[fn]".format(style_tag)):
@@ -2044,32 +2039,13 @@ class ConvertElementsWhichHaveIdPipeline(object):
         def transform(self, data):
             raw, xml = data
             logger.info("FixLabel")
-            for label in xml.findall(".//label[@href]"):
-                elem = xml.find(".//*[@id='{}']".format(label.get("href")))
+            for label in xml.findall(".//label[@rid]"):
+                elem = xml.find(".//*[@id='{}']".format(label.get("rid")))
                 if elem is not None:
                     label.addprevious(deepcopy(elem))
                     parent = elem.getparent()
                     parent.remove(elem)
-                else:
-                    fn = None
-                    previous = label.getprevious()
-                    if previous is None:
-                        parent = label.getparent()
-                        if parent.getchildren()[0] is label and not (parent.text or "").strip():
-                            fn = etree.Element("fn")
-                    elif previous.tag != "fn" and not (previous.tail or "").strip():
-                        fn = etree.Element("fn")
-                    if fn is not None:
-                        number = []
-                        for x in label.get("href")[1:][::-1]:
-                            if x.isdigit():
-                                number.insert(0, x)
-                            else:
-                                if len(x) > 0:
-                                    break
-                        fn.set("id", "fn" + "".join(number))
-                        label.addprevious(fn)
-                label.attrib.pop("href")
+                label.attrib.clear()
             return data
 
     class AddContentToFnPipe(plumber.Pipe):
@@ -2084,6 +2060,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     break
                 fn.attrib.pop("move")
                 self._move_label_into_fn(fn)
+
                 self._move_fn_tail_into_fn(fn)
                 # print(etree.tostring(fn))
             return data
@@ -2113,16 +2090,18 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     n.text = n.text.replace(splitted[-1], "")
 
         def _move_fn_tail_into_fn(self, node):
-
             parent = node.getparent()
-            node.text = node.tail
+            node.text = (node.tail or "").strip()
             node.tail = ""
             while True:
                 _next = node.getnext()
                 if _next is None:
                     break
-                if _next.tag in ["fn", "p"]:
+                if _next.tag in ["fn"]:
                     break
+                if _next.tag in ["p"]:
+                    if get_node_text(node):
+                        break
                 node.append(deepcopy(_next))
                 parent = _next.getparent()
                 parent.remove(_next)
@@ -2292,8 +2271,26 @@ class ConvertElementsWhichHaveIdPipeline(object):
         anexos, são identificados como "fn" (notas de rodapé). No entanto,
         podem ser apenas "target"
         """
+        _fn_items = None
+
+        def get_fn_items(self, xml):
+            if self._fn_items is None:
+                body = xml.getroottree().find(".//body")
+                paragraphs = [e.findall(".//fn") for e in body.findall("*")]
+                blank = []
+                fn_items = []
+                for fns in paragraphs[::-1]:
+                    if len(fns):
+                        fn_items.extend(fns)
+                    elif len(blank) and len(fn_items):
+                        break
+                    else:
+                        blank.append("")
+                self._fn_items = fn_items
+
         def transform(self, data):
             raw, xml = data
+            self.get_fn_items(xml)
             for fn in xml.findall(".//fn"):
                 _is_target = self._is_target(fn)
                 if _is_target:
@@ -2317,35 +2314,18 @@ class ConvertElementsWhichHaveIdPipeline(object):
             return data
 
         def _is_target(self, node):
-            logger.info("Target?")
             if node.find("label") is not None and node.find("p") is not None:
-                logger.info("label && p")
                 return False
-            root = node.getroottree()
-            items = [e.findall(".//fn") for e in root.findall(".//body/*")]
-            fn_items = []
-            blank = []
-            for item in items[::-1]:
-                if len(item) == 1:
-                    fn_items.extend(item)
-                elif len(item) > 1:
-                    fn_items.extend(item)
-                elif len(fn_items) > 0 and len(blank) > 0:
-                    break
-                else:
-                    blank.append(item)
-            logger.info(items)
-            logger.info(fn_items)
-            if node not in fn_items:
+            logger.info("Target?")
+
+            if node not in self._fn_items:
                 return True
 
         def _is_a_top_target(self, node):
             root = node.getroottree()
-            for e in root.findall(".//body/*")[:2]:
-                if node is e:
-                    return True
-                if node in e.findall(".//*"):
-                    return True
+            nodes = root.findall(".//*")
+            if node in nodes[:len(nodes)//2]:
+                return True
 
         def _remove_target_in_assets(self, xml):
             for tag in ["table-wrap", "fig", "disp-formula"]:
