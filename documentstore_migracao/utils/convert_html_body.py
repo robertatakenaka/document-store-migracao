@@ -133,17 +133,17 @@ class HTML2SPSPipeline(object):
         self.index_body = index_body
         self._ppl = plumber.Pipeline(
             self.SetupPipe(super_obj=self),
+            self.ConvertRemoteLocation2LocalLocation(),
             self.SaveRawBodyPipe(super_obj=self),
             self.DeprecatedHTMLTagsPipe(),
-            self.RemoveImgSetaPipe(),
+            self.ReplaceImgSetaPipe(),
             self.RemoveDuplicatedIdPipe(),
             self.RemoveOrMoveStyleTagsPipe(),
             self.RemoveEmptyPipe(),
             self.RemoveStyleAttributesPipe(),
             self.RemoveCommentPipe(),
             self.AHrefPipe(super_obj=self),
-            self.ConvertRemoteLocation2LocalLocation(),
-            self.PPipe(),
+            # self.PPipe(),
             self.DivPipe(),
             self.LiPipe(),
             self.OlPipe(),
@@ -193,7 +193,10 @@ class HTML2SPSPipeline(object):
             raw, xml = data
             root = xml.getroottree()
             root.write(
-                os.path.join("/tmp/", "%s.xml" % self.super_obj.pid),
+                os.path.join(
+                    "/tmp/",
+                    "%s_%s.xml" % (
+                        self.super_obj.pid, self.super_obj.index_body)),
                 encoding="utf-8",
                 doctype=config.DOC_TYPE_XML,
                 xml_declaration=True,
@@ -204,9 +207,78 @@ class HTML2SPSPipeline(object):
     class ConvertRemoteLocation2LocalLocation(plumber.Pipe):
 
         def transform(self, data):
+            logger.info("ConvertRemoteLocation2LocalLocation")
             raw, xml = data
-            html_page = FixedHTMLPage(xml)
+            html_page = Body(xml)
             html_page.remote_to_local()
+            return data
+
+    class AHrefPipe(CustomPipe):
+        def _create_ext_link(self, node, extlinktype="uri"):
+            node.tag = "ext-link"
+            href = node.attrib.get("href")
+            node.attrib.clear()
+            node.set("ext-link-type", extlinktype)
+            node.set("{http://www.w3.org/1999/xlink}href", href)
+
+        def _create_email(self, node):
+            href = node.get("href").strip()
+            if "mailto:" in href:
+                href = href.split("mailto:")[1]
+            node.tag = "email"
+            if not href:
+                # devido ao caso do href estar mal
+                # formado devemos so trocar a tag
+                # e retorna para continuar o Pipe
+                return
+            img = node.find("img")
+
+            if img is not None:
+                graphic = etree.Element("graphic")
+                graphic.set(
+                    "{http://www.w3.org/1999/xlink}href", img.attrib["src"])
+                graphic.append(deepcopy(node))
+                img.addprevious(graphic)
+                parent = img.getparent()
+                parent.remove(img)
+                parent = node.getparent()
+                parent.remove(node)
+                return
+
+            node_text = (node.text or "").strip()
+            if href == node_text:
+                return
+
+            if href in node_text:
+                root = node.getroottree()
+                temp = etree.Element("REMOVE_TAG")
+                texts = node_text.split(href)
+                temp.text = texts[0]
+                email = etree.Element("email")
+                email.text = href
+                temp.append(email)
+                temp.tail = texts[1]
+                node.addprevious(temp)
+                etree.strip_tags(root, "REMOVE_TAG")
+            elif node_text == "":
+                node.text = href
+            else:
+                node.tag = "ext-link"
+                node.set("ext-link-type", "email")
+                node.set("{http://www.w3.org/1999/xlink}href", href)
+
+        def parser_node(self, node):
+            href = node.get("href")
+            if href.startswith("#") or node.get("link-type") == "internal":
+                return
+            if "mailto" in href or "@" in href:
+                return self._create_email(node)
+            if ":" in href or node.get("link-type") == "external":
+                return self._create_ext_link(node)
+
+        def transform(self, data):
+            raw, xml = data
+            _process(xml, "a[@href]", self.parser_node)
             return data
 
     class DeprecatedHTMLTagsPipe(CustomPipe):
@@ -1069,7 +1141,7 @@ class HTML2SPSPipeline(object):
             _, obj = convert.deploy(xml)
             return raw, obj
 
-    class RemoveImgSetaPipe(plumber.Pipe):
+    class ReplaceImgSetaPipe(plumber.Pipe):
         def parser_node(self, node):
             img = node.find("img")
             src = img.attrib.get("src")
@@ -1215,13 +1287,12 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.RemoveThumbImgPipe(),
             self.AddNameAndIdToElementAPipe(),
             self.AddTitleToElementAPipe(),
-            self.AddXrefIdToStyleTagsPipe(),
-            self.RemoveInvalidAnchorAndLinksPipe(),
+            self.IdentifyAssetLabelCandidatesPipe(),
+            self.IdentifyFnLabelCandidatesPipe(),
             self.DeduceAndSuggestConversionPipe(super_obj=html_pipeline),
             self.ApplySuggestedConversionPipe(super_obj=html_pipeline),
             self.AddAssetInfoToTablePipe(super_obj=html_pipeline),
             self.CreateAssetElementsFromImgOrTableElementsPipe(super_obj=html_pipeline),
-            #self.APipe(super_obj=html_pipeline),
             self.ImgPipe(super_obj=html_pipeline),
             self.MoveFnPipe(),
             self.FixLabel(),
@@ -1473,7 +1544,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.add_title_to_other_a(xml)
             return data
 
-    class AddXrefIdToStyleTagsPipe(plumber.Pipe):
+    class IdentifyAssetLabelCandidatesPipe(plumber.Pipe):
         def add_href(self, xml):
             root = xml.getroottree()
             titles = {}
@@ -1482,19 +1553,24 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 if title:
                     titles[title] = titles.get(title, [])
                     titles[title].append(node)
-            for style_tag in ["bold", "sup"]:
+            for style_tag in ["bold"]:
                 for style_node in xml.findall(".//{}".format(style_tag)):
                     text = (style_node.text or "").strip().lower()
-                    elem = titles.get(text)
-                    if elem is not None and style_node not in elem.findall(".//*"):
-                        logger.info(etree.tostring(style_node))
-                        logger.info(etree.tostring(elem))
-                        style_node.set("rid", elem.get("href"))
+                    if text and text[0].isalpha():
+                        elem = titles.get(text)
+                        if (elem is not None and
+                            style_node not in elem[0].findall(".//*") and
+                            elem[0].get("href")[0] == "#"):
+                            logger.info("style_node: %s" % (etree.tostring(style_node)))
+                            logger.info("elem: %s" % (etree.tostring(elem[0])))
+                            style_node.set("label-of", elem[0].get("href"))
+                            logger.info("style_node: %s" % (etree.tostring(style_node)))
 
         def transform(self, data):
-            logger.info("AddXrefIdToStyleTagsPipe")
+            logger.info("IdentifyAssetLabelCandidatesPipe")
             raw, xml = data
             self.add_href(xml)
+            logger.info("IdentifyAssetLabelCandidatesPipe - fim")
             return data
 
     class DeduceAndSuggestConversionPipe(CustomPipe):
@@ -1680,14 +1756,15 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self._add_xml_attribs_to_img(images)
             return data
 
-    class RemoveInvalidAnchorAndLinksPipe(plumber.Pipe):
+    class IdentifyFnLabelCandidatesPipe(plumber.Pipe):
         """
         No texto há âncoras (a[@name]) e referencias cruzada (a[@href]):
         TEXTO->NOTAS e NOTAS->TEXTO.
         Remove as âncoras e referências cruzadas relacionadas com NOTAS->TEXTO.
         Também remover duplicidade de a[@name]
+        Algumas NOTAS->TEXTO podem ser convertidas a "fn/label"
         """
-        def _fix_a_position(self, xml):
+        def _remove_p(self, xml):
             fn_items = xml.findall(".//a")
             for node in xml.findall(".//p[a]"):
                 if len(node.getchildren()) == 1 and not get_node_text(node):
@@ -1709,9 +1786,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
         def _exclude(self, items_by_id):
             root = None
-            a_titles = {}
-            for item in root.findall(".//a[@title]"):
-                a_titles[item.get("title")] = item
             for _id, nodes in items_by_id.items():
                 repeated = [n for n in nodes if n.attrib.get("name")]
                 # remove os a[@name] repetidos
@@ -1719,6 +1793,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     for n in repeated[1:]:
                         nodes.remove(n)
                         parent = n.getparent()
+
                         parent.remove(n)
                 # remove os a[@href] se a[@name] aparece antes,
                 # exceto se a[@href] serão convertidos a "fn" (notas de rodapé)
@@ -1728,13 +1803,16 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     for n in nodes[1:]:
                         title = n.get("title")
                         if n.get("href") and title and not title[0].isalpha():
+                            logger.info("Identifica candidato a fn/label")
                             root = root or n.getroottree()
                             logger.info(etree.tostring(n))
                             n.tag = "label"
-                            item = a_titles.get(title)
-                            if item:
-                                n.set("rid", item.get("name"))
+                            for item in root.findall(".//a[@title='{}']".format(title)):
+                                if item.get("name"):
+                                    n.set("label-of", item.get("name"))
                             logger.info(etree.tostring(n))
+                        elif title[0].isalpha():
+                            pass
                         else:
                             logger.info("remove: %s" % etree.tostring(n))
                             _remove_element_or_comment(n)
@@ -1744,9 +1822,11 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
         def transform(self, data):
             raw, xml = data
-            self._fix_a_position(xml)
+            logger.info("IdentifyFnLabelCandidatesPipe")
+            self._remove_p(xml)
             items_by_id = self._identify_order(xml)
             self._exclude(items_by_id)
+            logger.info("IdentifyFnLabelCandidatesPipe - fim")
             return data
 
     class ApplySuggestedConversionPipe(CustomPipe):
@@ -1785,6 +1865,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
             document = Document(xml)
             for name, a_name_and_hrefs in document.a_names.items():
                 a_name, a_hrefs = a_name_and_hrefs
+                print(etree.tostring(a_name))
+                print(a_hrefs)
                 if a_name.attrib.get("xml_id"):
                     new_id = a_name.attrib.get("xml_id")
                     new_tag = a_name.attrib.get("xml_tag")
@@ -1793,75 +1875,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     self._update_a_href_items(a_hrefs, new_id, reftype)
                 else:
                     self._remove_a(a_name, a_hrefs)
-            return data
-
-    class AHrefPipe(CustomPipe):
-        def _create_ext_link(self, node, extlinktype="uri"):
-            node.tag = "ext-link"
-            href = node.attrib.get("href")
-            node.attrib.clear()
-            node.set("ext-link-type", extlinktype)
-            node.set("{http://www.w3.org/1999/xlink}href", href)
-
-        def _create_email(self, node):
-            href = node.get("href").strip()
-            if "mailto:" in href:
-                href = href.split("mailto:")[1]
-            node.tag = "email"
-            if not href:
-                # devido ao caso do href estar mal
-                # formado devemos so trocar a tag
-                # e retorna para continuar o Pipe
-                return
-            img = node.find("img")
-
-            if img is not None:
-                graphic = etree.Element("graphic")
-                graphic.set(
-                    "{http://www.w3.org/1999/xlink}href", img.attrib["src"])
-                graphic.append(deepcopy(node))
-                img.addprevious(graphic)
-                parent = img.getparent()
-                parent.remove(img)
-                parent = node.getparent()
-                parent.remove(node)
-                return
-
-            node_text = (node.text or "").strip()
-            if href == node_text:
-                return
-
-            if href in node_text:
-                root = node.getroottree()
-                temp = etree.Element("REMOVE_TAG")
-                texts = node_text.split(href)
-                temp.text = texts[0]
-                email = etree.Element("email")
-                email.text = href
-                temp.append(email)
-                temp.tail = texts[1]
-                node.addprevious(temp)
-                etree.strip_tags(root, "REMOVE_TAG")
-            elif node_text == "":
-                node.text = href
-            else:
-                node.tag = "ext-link"
-                node.set("ext-link-type", "email")
-                node.set("{http://www.w3.org/1999/xlink}href", href)
-
-        def parser_node(self, node):
-            href = node.get("href")
-            if href.startswith("#"):
-                return
-            if "mailto" in href or "@" in href:
-                return self._create_email(node)
-            if ":" in href or not "/" in href or "." in href.split("/")[0]:
-                return self._create_ext_link(node)
-            self._import_external_file_content(node)
-
-        def transform(self, data):
-            raw, xml = data
-            _process(xml, "a[@href]", self.parser_node)
             return data
 
     class ImgPipe(CustomPipe):
@@ -2393,22 +2406,53 @@ class HTMLPage:
         self.file = AssetFile(href)
         self.html_tree = self._load()
         self.body = self.html_tree.find(".//body")
-        self.p_nodes = self.body.findall("*")
 
     def _load(self):
-        html_content = self.file.content()
+        # TODO: Tratar excecoes
+        html_content = self.file.content
         if html_content:
             return etree.fromstring(html_content, parser=etree.HTMLParser())
 
 
-class FixedHTMLPage:
+class Body:
 
-    def __init__(self, html_page):
-        self.html_page = html_page
+    def __init__(self, xml):
+        self.xml = xml
+        self.body = self.xml.find(".//body")
+        self.p_nodes = self.body.findall("*")
 
     def remote_to_local(self):
         self._import_file_content()
         self._download_asset_files()
+
+    def _classify_a_href(self):
+        for a_href in self.xml.findall(".//a[@href]"):
+            if not a_href.get("link-type"):
+                href = a_href.get("href")
+                if ":" in href:
+                    a_href.set("link-type", "external")
+                    continue
+                if href and href[0] == "#":
+                    a_href.set("link-type", "internal")
+                    continue
+
+                value = href.split("/")[0]
+                if "." in value:
+                    f, ext = os.path.splitext(value)
+                    if ext in [".htm", ".html"] or ext.startswith(".htm"):
+                        a_href.set("link-type", "file")
+                    elif len(value.split(".")) > 2:
+                        a_href.set("link-type", "external")
+                    else:
+                        a_href.set("link-type", "?")
+                else:
+                    f, ext = os.path.splitext(href)
+                    if ext in [".htm", ".html"] or ext.startswith(".htm"):
+                        a_href.set("link-type", "file")
+                    elif len(f.split(".")) > 2:
+                        a_href.set("link-type", "external")
+                    else:
+                        a_href.set("link-type", "internal")
 
     def _import_file_content(self):
         while True:
@@ -2418,47 +2462,70 @@ class FixedHTMLPage:
 
     def _download_asset_files(self):
         for tag, attr_name in [("img", "src"), ("a", "href")]:
-            for a_href in self.html_page.body.findall(".//{}[@{}]".format(tag, attr_name)):
-                href = a_href.get("href")
-                if ":" in href or "." in href.split("/")[0]:
+            for node in self.xml.findall(".//{}[@{}]".format(tag, attr_name)):
+                location = node.get(attr_name)
+                if location[0] == "#":
+                    node.set("link-type", "internal")
                     continue
-                f, ext = os.path.splitext(href)
+                if "." in location.split("/")[0] or ":" in location:
+                    node.set("link-type", "external")
+                    continue
+                f, ext = os.path.splitext(location)
                 if ext not in [".htm", ".html"]:
-                    asset_file = AssetFile(href)
+                    logger.info(
+                        "Obtem conteudo do site antigo: %s" % location)
+                    asset_file = AssetFile(location)
                     if asset_file.content:
-                        a_href.set(attr_name, asset_file.basename)
-                        logger.info("Atualiza a/@href: %s" % etree.tostring(a_href))
+                        node.set(attr_name, asset_file.basename)
+                        node.set("link-type", "internal")
+                        logger.info("Atualiza %s/@%s: %s" %
+                                    (tag, attr_name, etree.tostring(node)))
 
     def __import_file_content(self):
-        p_start = 0
         new_p_items = []
-        p_items = enumerate(self.html_page.p_nodes)
-        for a_href in self.html_page.body.findall(".//a[@href]"):
+        self._classify_a_href()
+        for a_href in self.xml.findall(".//a[@link-type='file']"):
             href = a_href.get("href")
             if ":" in href or "." in href.split("/")[0]:
                 continue
             f, ext = os.path.splitext(href)
+            new_href = os.path.basename(f)
+            if ext.startswith(".htm") and "#" in ext:
+                href = href.split("#")[0]
+                new_href = new_href.split("#")[0]
             if ext in [".htm", ".html"]:
+                # TODO tratar excecoes
                 html = HTMLPage(href)
-                if html.body:
-                    new_p = self._create_p(
-                        a_href, html.file.new_href, deepcopy(html.body))
+                if html.body is not None:
+                    logger.info("Importa conteudo de %s" % href)
+                    new_p = self._create_new_p(
+                        a_href, new_href, deepcopy(html.body))
                     # localiza onde será inserido o new_p
-                    for i, p in p_items[p_start:]:
+                    for p in self.p_nodes:
                         if a_href in p.findall(".//a[@href]"):
-                            p_start = i
                             new_p_items.append((p, new_p))
                             break
+
         for p, new_p in new_p_items[::-1]:
-            logger.info("Cria novo p (asset): %s" % etree.tostring(new_p))
+            logger.info(
+                "Cria novo p com conteudo do html externo: %s" % etree.tostring(new_p))
             p.addnext(new_p)
         return len(new_p_items)
 
     def _create_new_p(self, a_href, new_href, body):
         a_href.set("href", "#"+new_href)
+        a_href.set("link-type", "internal")
         logger.info("Atualiza a/@href: %s" % etree.tostring(a_href))
 
         body.tag = "REMOVE_TAG"
+        for a in body.findall(".//a"):
+            href = a.get("href")
+            if href and href[0] == "#":
+                a.set("href", "#" + new_href + href[1:].replace("#", "X"))
+                a.set("link-type", "internal")
+            elif a.get("name"):
+                a.set("name", new_href + "X" + a.get("name"))
+            logger.info("Atualiza a/@name: %s" % etree.tostring(a))
 
         a_name = etree.Element("a")
         a_name.set("id", new_href)
