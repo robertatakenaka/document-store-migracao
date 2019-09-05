@@ -141,6 +141,8 @@ class HTML2SPSPipeline(object):
             self.RemoveEmptyPipe(),
             self.RemoveStyleAttributesPipe(),
             self.RemoveCommentPipe(),
+            self.AHrefPipe(super_obj=self),
+            self.ConvertRemoteLocation2LocalLocation(),
             self.PPipe(),
             self.DivPipe(),
             self.LiPipe(),
@@ -198,6 +200,14 @@ class HTML2SPSPipeline(object):
                 pretty_print=True,
             )
             return data, xml
+
+    class ConvertRemoteLocation2LocalLocation(plumber.Pipe):
+
+        def transform(self, data):
+            raw, xml = data
+            html_page = FixedHTMLPage(xml)
+            html_page.remote_to_local()
+            return data
 
     class DeprecatedHTMLTagsPipe(CustomPipe):
         TAGS = ["font", "small", "big", "dir", "span", "s", "lixo", "center"]
@@ -1205,14 +1215,11 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.RemoveThumbImgPipe(),
             self.AddNameAndIdToElementAPipe(),
             self.AddTitleToElementAPipe(),
-            self.AddHrefToStyleTagsPipe(),
+            self.AddXrefIdToStyleTagsPipe(),
             self.RemoveInvalidAnchorAndLinksPipe(),
             self.DeduceAndSuggestConversionPipe(super_obj=html_pipeline),
             self.ApplySuggestedConversionPipe(super_obj=html_pipeline),
             self.AddAssetInfoToTablePipe(super_obj=html_pipeline),
-            self.CreateAssetElementsFromExternalLinkElementsPipe(
-                 super_obj=html_pipeline
-            ),
             self.CreateAssetElementsFromImgOrTableElementsPipe(super_obj=html_pipeline),
             self.APipe(super_obj=html_pipeline),
             self.ImgPipe(super_obj=html_pipeline),
@@ -1246,78 +1253,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
         def transform(self, data):
             raw, xml = data
             _process(xml, "table[@id]", self.parser_node)
-            return data
-
-    class CreateAssetElementsFromExternalLinkElementsPipe(CustomPipe):
-        def _create_asset_content_as_graphic(self, node_a):
-            href = node_a.attrib.get("href")
-            new_graphic = etree.Element("graphic")
-            new_graphic.set("{http://www.w3.org/1999/xlink}href", href)
-            return new_graphic
-
-        def _create_asset_content_from_html(self, node_a, new_tag, new_id):
-            href = node_a.attrib.get("href")
-            parts = href.split("/")
-            local = "/".join(parts[-4:])
-            remote = config.get("STATIC_URL_FILE") + href[1:]
-            local = os.path.join(config.get("SITE_SPS_PKG_PATH"), local)
-            asset_in_html_page = AssetInHTMLPage(local, remote)
-            tree = asset_in_html_page.convert(self.super_obj)
-            if tree is not None:
-                tree.tag = "REMOVE_TAG"
-                return tree
-            return
-
-        def _create_asset_group(self, a_href):
-            root = a_href.getroottree()
-            new_id = a_href.attrib.get("xml_id")
-            new_tag = a_href.attrib.get("xml_tag")
-            if not new_tag or not new_id:
-                return
-
-            asset = find_or_create_asset_node(root, new_tag, new_id)
-            if asset is not None:
-                href = a_href.attrib.get("href")
-                fname, ext = os.path.splitext(href.lower())
-
-                if ext in [".htm", ".html"]:
-                    asset_content = self._create_asset_content_from_html(
-                        a_href, new_tag, new_id
-                    )
-                else:
-                    asset_content = self._create_asset_content_as_graphic(a_href)
-
-                if asset_content is not None:
-                    asset.append(asset_content)
-                    if asset_content.tag == "REMOVE_TAG":
-                        etree.strip_tags(asset, "REMOVE_TAG")
-
-                if asset.getparent() is None:
-                    create_p_for_asset(a_href, asset)
-
-                self._create_xref(a_href)
-
-        def _create_xref(self, a_href):
-            reftype = a_href.attrib.pop("xml_reftype")
-            new_id = a_href.attrib.pop("xml_id")
-
-            if new_id is None or reftype is None:
-                return
-
-            a_href.tag = "xref"
-            a_href.attrib.clear()
-            a_href.set("rid", new_id)
-            a_href.set("ref-type", reftype)
-
-        def transform(self, data):
-            raw, xml = data
-            document = Document(xml)
-            a_href_texts, file_paths = document.a_href_items
-            for path, nodes in file_paths.items():
-                if nodes[0].attrib.get("xml_tag"):
-                    self._create_asset_group(nodes[0])
-                    for node in nodes[1:]:
-                        self._create_xref(node)
             return data
 
     class CreateAssetElementsFromImgOrTableElementsPipe(CustomPipe):
@@ -1538,7 +1473,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.add_title_to_other_a(xml)
             return data
 
-    class AddHrefToStyleTagsPipe(plumber.Pipe):
+    class AddXrefIdToStyleTagsPipe(plumber.Pipe):
         def add_href(self, xml):
             root = xml.getroottree()
             titles = {}
@@ -1557,7 +1492,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
                         style_node.set("rid", elem.get("href"))
 
         def transform(self, data):
-            logger.info("AddHrefToStyleTagsPipe")
+            logger.info("AddXrefIdToStyleTagsPipe")
             raw, xml = data
             self.add_href(xml)
             return data
@@ -1774,6 +1709,9 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
         def _exclude(self, items_by_id):
             root = None
+            a_titles = {}
+            for item in root.findall(".//a[@title]"):
+                a_titles[item.get("title")] = item
             for _id, nodes in items_by_id.items():
                 repeated = [n for n in nodes if n.attrib.get("name")]
                 # remove os a[@name] repetidos
@@ -1793,11 +1731,12 @@ class ConvertElementsWhichHaveIdPipeline(object):
                             root = root or n.getroottree()
                             logger.info(etree.tostring(n))
                             n.tag = "label"
-                            for item in root.findall(".//a[@title='{}']".format(title)):
-                                if item.get("name"):
-                                    n.set("rid", item.get("name"))
+                            item = a_titles.get(title)
+                            if item:
+                                n.set("rid", item.get("name"))
                             logger.info(etree.tostring(n))
                         else:
+                            logger.info("remove: %s" % etree.tostring(n))
                             _remove_element_or_comment(n)
                     etree.strip_tags(nodes[0], "REMOVE_TAG")
                 if len(nodes) == 1 and nodes[0].attrib.get("href"):
@@ -1856,6 +1795,75 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     self._remove_a(a_name, a_hrefs)
             return data
 
+    class AHrefPipe(CustomPipe):
+        def _create_ext_link(self, node, extlinktype="uri"):
+            node.tag = "ext-link"
+            href = node.attrib.get("href")
+            node.attrib.clear()
+            node.set("ext-link-type", extlinktype)
+            node.set("{http://www.w3.org/1999/xlink}href", href)
+
+        def _create_email(self, node):
+            href = node.get("href").strip()
+            if "mailto:" in href:
+                href = href.split("mailto:")[1]
+            node.tag = "email"
+            if not href:
+                # devido ao caso do href estar mal
+                # formado devemos so trocar a tag
+                # e retorna para continuar o Pipe
+                return
+            img = node.find("img")
+
+            if img is not None:
+                graphic = etree.Element("graphic")
+                graphic.set(
+                    "{http://www.w3.org/1999/xlink}href", img.attrib["src"])
+                graphic.append(deepcopy(node))
+                img.addprevious(graphic)
+                parent = img.getparent()
+                parent.remove(img)
+                parent = node.getparent()
+                parent.remove(node)
+                return
+
+            node_text = (node.text or "").strip()
+            if href == node_text:
+                return
+
+            if href in node_text:
+                root = node.getroottree()
+                temp = etree.Element("REMOVE_TAG")
+                texts = node_text.split(href)
+                temp.text = texts[0]
+                email = etree.Element("email")
+                email.text = href
+                temp.append(email)
+                temp.tail = texts[1]
+                node.addprevious(temp)
+                etree.strip_tags(root, "REMOVE_TAG")
+            elif node_text == "":
+                node.text = href
+            else:
+                node.tag = "ext-link"
+                node.set("ext-link-type", "email")
+                node.set("{http://www.w3.org/1999/xlink}href", href)
+
+        def parser_node(self, node):
+            href = node.get("href")
+            if href.startswith("#"):
+                return
+            if "mailto" in href or "@" in href:
+                return self._create_email(node)
+            if ":" in href or not "/" in href or "." in href.split("/")[0]:
+                return self._create_ext_link(node)
+            self._import_external_file_content(node)
+
+        def transform(self, data):
+            raw, xml = data
+            _process(xml, "a[@href]", self.parser_node)
+            return data
+
     class APipe(CustomPipe):
         def _parser_node_external_link(self, node, extlinktype="uri"):
             node.tag = "ext-link"
@@ -1869,12 +1877,9 @@ class ConvertElementsWhichHaveIdPipeline(object):
             node.attrib.update(_attrib)
 
         def _create_email(self, node):
-            a_node_copy = deepcopy(node)
-            href = a_node_copy.attrib.get("href")
+            href = node.get("href")
             if "mailto:" in href:
                 href = href.split("mailto:")[1]
-
-            node.attrib.clear()
             node.tag = "email"
 
             if not href:
@@ -2338,69 +2343,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
                         target.tag = "REMOVE_TAG"
 
 
-class AssetInHTMLPage:
-    def __init__(self, local=None, remote=None, content=None):
-        self.local = local
-        self.remote = remote
-
-    def convert(self, _pipeline):
-        xmltree = self._convert(_pipeline)
-        if xmltree is not None:
-            with open(self.local + ".xml", "wb") as fp:
-                fp.write(self.ent2char(etree.tostring(xmltree)))
-        else:
-            logger.info(self.local)
-        return xmltree
-
-    @property
-    def xml_tree(self):
-        xml_filepath = self.local + ".xml"
-        if os.path.isfile(xml_filepath):
-            with open(xml_filepath, "rb") as fp:
-                content = fp.read()
-                if content:
-                    return etree.fromstring(content)
-
-    def _convert(self, _pipeline):
-        html_tree = self.html_tree
-        if html_tree is not None:
-            body_tree = html_tree.find(".//body")
-
-            if body_tree is not None:
-                body_tree.set("xmlns:xlink", "http://www.w3.org/1999/xlink")
-                __, xml_tree = _pipeline.deploy(body_tree)
-                return xml_tree
-
-    @property
-    def html_tree(self):
-        html_content = self.get_html_content()
-        if html_content:
-            return etree.fromstring(html_content, parser=etree.HTMLParser())
-
-    def ent2char(self, data):
-        return html.unescape(data.decode("utf-8")).encode("utf-8").strip()
-
-    def download(self):
-        with request.urlopen(self.remote, timeout=30) as fp:
-            return fp.read()
-
-    def get_html_content(self):
-        if self.local and os.path.isfile(self.local):
-            with open(self.local, "rb") as fp:
-                return fp.read()
-        try:
-            content = self.download()
-        except (error.HTTPError, error.URLError) as e:
-            logger.exception(e)
-        else:
-            dirname = os.path.dirname(self.local)
-            if not os.path.isdir(dirname):
-                os.makedirs(dirname)
-            with open(self.local, "wb") as fp:
-                fp.write(self.ent2char(content))
-            return content
-
-
 def join_texts(texts):
     return " ".join([item for item in texts if item])
 
@@ -2511,3 +2453,132 @@ class Document:
                     items[filename] = []
                 items[filename].append(img)
         return items
+
+
+class AssetFile:
+    def __init__(self, href):
+        self.href = href
+        self.basename = os.path.basename(href)
+        self.new_href, self.ext = os.path.splitext(self.basename)
+
+    @property
+    def remote(self):
+        return os.path.join(config.get("STATIC_URL_FILE"), self.href[1:])
+
+    @property
+    def local(self):
+        parts = self.remote.split("/")
+        local = "/".join(parts[-4:])
+        return os.path.join(config.get("SITE_SPS_PKG_PATH"), local)
+
+    def ent2char(self, data):
+        return html.unescape(data.decode("utf-8")).encode("utf-8").strip()
+
+    def get_remote_content(self, timeout=30):
+        with request.urlopen(self.remote, timeout=timeout) as fp:
+            return fp.read()
+
+    @property
+    def content(self):
+        if self.local and os.path.isfile(self.local):
+            with open(self.local, "rb") as fp:
+                return fp.read()
+        try:
+            _content = self.get_remote_content()
+        except (error.HTTPError, error.URLError) as e:
+            logger.exception(e)
+        else:
+            dirname = os.path.dirname(self.local)
+            if not os.path.isdir(dirname):
+                os.makedirs(dirname)
+            with open(self.local, "wb") as fp:
+                if self.ext in [".html", ".htm"]:
+                    fp.write(self.ent2char(_content))
+                else:
+                    fp.write(_content)
+            return _content
+
+
+class HTMLPage:
+
+    def __init__(self, href):
+        self.file = AssetFile(href)
+        self.html_tree = self._load()
+        self.body = self.html_tree.find(".//body")
+        self.p_nodes = self.body.findall("*")
+
+    def _load(self):
+        html_content = self.file.content()
+        if html_content:
+            return etree.fromstring(html_content, parser=etree.HTMLParser())
+
+
+class FixedHTMLPage:
+
+    def __init__(self, html_page):
+        self.html_page = html_page
+
+    def remote_to_local(self):
+        self._import_file_content()
+        self._download_asset_files()
+
+    def _import_file_content(self):
+        while True:
+            q = self.__import_file_content()
+            if q == 0:
+                break
+
+    def _download_asset_files(self):
+        for tag, attr_name in [("img", "src"), ("a", "href")]:
+            for a_href in self.html_page.body.findall(".//{}[@{}]".format(tag, attr_name)):
+                href = a_href.get("href")
+                if ":" in href or "." in href.split("/")[0]:
+                    continue
+                f, ext = os.path.splitext(href)
+                if ext not in [".htm", ".html"]:
+                    asset_file = AssetFile(href)
+                    if asset_file.content:
+                        a_href.set(attr_name, asset_file.basename)
+                        logger.info("Atualiza a/@href: %s" % etree.tostring(a_href))
+
+    def __import_file_content(self):
+        p_start = 0
+        new_p_items = []
+        p_items = enumerate(self.html_page.p_nodes)
+        for a_href in self.html_page.body.findall(".//a[@href]"):
+            href = a_href.get("href")
+            if ":" in href or "." in href.split("/")[0]:
+                continue
+            f, ext = os.path.splitext(href)
+            if ext in [".htm", ".html"]:
+                html = HTMLPage(href)
+                if html.body:
+                    new_p = self._create_p(
+                        a_href, html.file.new_href, deepcopy(html.body))
+                    # localiza onde será inserido o new_p
+                    for i, p in p_items[p_start:]:
+                        if a_href in p.findall(".//a[@href]"):
+                            p_start = i
+                            new_p_items.append((p, new_p))
+                            break
+        for p, new_p in new_p_items[::-1]:
+            logger.info("Cria novo p (asset): %s" % etree.tostring(new_p))
+            p.addnext(new_p)
+        return len(new_p_items)
+
+    def _create_new_p(self, a_href, new_href, body):
+        a_href.set("href", "#"+new_href)
+        logger.info("Atualiza a/@href: %s" % etree.tostring(a_href))
+
+        body.tag = "REMOVE_TAG"
+
+        a_name = etree.Element("a")
+        a_name.set("id", new_href)
+        a_name.set("name", new_href)
+        a_name.append(body)
+
+        new_p = etree.Element("p")
+        new_p.set("content-type", "html")
+        new_p.append(a_name)
+        etree.strip_tags(new_p, "REMOVE_TAG")
+        return new_p
