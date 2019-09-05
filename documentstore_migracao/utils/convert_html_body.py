@@ -1540,6 +1540,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
     class AddHrefToStyleTagsPipe(plumber.Pipe):
         def add_href(self, xml):
+            root = xml.getroottree()
             titles = {}
             for node in xml.findall(".//a[@href]"):
                 title = node.get("title")
@@ -1550,10 +1551,13 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 for style_node in xml.findall(".//{}".format(style_tag)):
                     text = (style_node.text or "").strip().lower()
                     elem = titles.get(text)
-                    if elem is not None:
-                        style_node.set("href", elem[0].get("href"))
+                    if elem is not None and style_node not in elem.findall(".//*"):
+                        logger.info(etree.tostring(style_node))
+                        logger.info(etree.tostring(elem))
+                        style_node.set("rid", elem.get("href"))
 
         def transform(self, data):
+            logger.info("AddHrefToStyleTagsPipe")
             raw, xml = data
             self.add_href(xml)
             return data
@@ -1785,7 +1789,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     nodes[0].tag = "REMOVE_TAG"
                     for n in nodes[1:]:
                         title = n.get("title")
-                        if n.get("href") and not title and title[0].isalpha():
+                        if n.get("href") and title and not title[0].isalpha():
                             root = root or n.getroottree()
                             logger.info(etree.tostring(n))
                             n.tag = "label"
