@@ -540,12 +540,14 @@ class HTML2SPSPipeline(object):
                 node = xml.find(".//*[br]")
                 if node is None:
                     break
-                parent = node.getparent()
                 new = self._create_new_node(node)
                 if node.tag == "p":
                     new.tag = "REMOVE_TAG"
                 node.addprevious(new)
                 node.set("content-type", "remove")
+            for node in xml.findall(".//*[@content-type='remove']"):
+                parent = node.getparent()
+                parent.remove(node)
 
             etree.strip_tags(xml, "REMOVE_TAG")
             logger.info("BR2PPipe._executa - fim")
@@ -1149,9 +1151,9 @@ class HTML2SPSPipeline(object):
         def parser_node(self, node):
             img = node.find("img")
             src = img.attrib.get("src")
-            if "/seta." in src or "flecha" in src:
+            if "seta" in src or "flecha" in src:
                 img.tag = "REMOVE_TAG"
-                node.text = "&#8679;"
+                #node.text = "&#8679;"
                 etree.strip_tags(node, "REMOVE_TAG")
 
         def transform(self, data):
@@ -1808,19 +1810,20 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     nodes[0].tag = "REMOVE_TAG"
                     for n in nodes[1:]:
                         title = n.get("title")
-                        if not title:
-                            continue
+                        found = None
                         if n.get("href") and title and not title[0].isalpha():
-                            logger.info("Identifica candidato a fn/label")
                             root = root or n.getroottree()
-                            logger.info(etree.tostring(n))
-                            n.tag = "label"
                             for item in root.findall(".//a[@title='{}']".format(title)):
                                 if item.get("name"):
-                                    n.set("label-of", item.get("name"))
+                                    found = item
+                                    break
+                        if found:
+                            logger.info("Identifica candidato a fn/label")
+
                             logger.info(etree.tostring(n))
-                        elif title[0].isalpha():
-                            pass
+                            n.tag = "label"
+                            n.set("label-of", found.get("name"))
+                            logger.info(etree.tostring(n))
                         else:
                             logger.info("remove: %s" % etree.tostring(n))
                             _remove_element_or_comment(n)
