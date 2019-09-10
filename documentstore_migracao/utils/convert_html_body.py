@@ -212,14 +212,6 @@ class HTML2SPSPipeline(object):
         def transform(self, data):
             logger.info("ConvertRemoteLocation2LocalLocation")
             raw, xml = data
-            for e in xml.xpath(".//*[@href]|.//*[@src]"):
-                location = e.get("src", e.get("href"))
-                if location and "fbpe" in location:
-                    location = location.replace("/img/fbpe", "/img/revistas")
-                for name in ["src", "href"]:
-                    if e.get(name):
-                        e.set(name, location)
-                        break
             html_page = InsertExternalHTMLBodyIntoXMLBody(xml)
             html_page.remote_to_local()
             return data
@@ -535,6 +527,7 @@ class HTML2SPSPipeline(object):
                     self._create_p(new, nodes, text)
                     nodes = []
                     text = child.tail
+                    node.remove(child)
                 else:
                     nodes.append(child)
             self._create_p(new, nodes, text)
@@ -553,7 +546,7 @@ class HTML2SPSPipeline(object):
                     new.tag = "REMOVE_TAG"
                 node.addprevious(new)
                 node.set("content-type", "remove")
-                parent.remove(node)
+
             etree.strip_tags(xml, "REMOVE_TAG")
             logger.info("BR2PPipe._executa - fim")
 
@@ -1303,7 +1296,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.DeduceAndSuggestConversionPipe(super_obj=html_pipeline),
             self.ApplySuggestedConversionPipe(super_obj=html_pipeline),
             self.AddAssetInfoToTablePipe(super_obj=html_pipeline),
-            # self.CreateAssetElementsFromImgOrTableElementsPipe(super_obj=html_pipeline),
             self.CompleteAssetPipe(),
             self.IdentifyAssetLabelAndCaptionPipe(),
             self.ImgPipe(super_obj=html_pipeline),
@@ -2049,7 +2041,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     break
                 if _next.tag in ["fig", "table-wrap", "app"]:
                     break
-
                 if _next.tag == "img":
                     img = _next
                     img.set("content-type", "img")
@@ -2182,7 +2173,9 @@ class ConvertElementsWhichHaveIdPipeline(object):
                         title.append(deepcopy(child))
                     p = found.getparent()
                     p.remove(found)
-            asset_node.attrib.pop("fix")
+            for attr in asset_node.attrib.keys():
+                if attr not in ["id", "ref-type", "rid"]:
+                    asset_node.attrib.pop(attr)
 
         def transform(self, data):
             raw, xml = data
@@ -2340,7 +2333,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 new_fn = etree.Element("fn")
                 new_fn = etree.Element("fn")
                 for k, v in fn.attrib.items():
-                    new_fn.set(k, v)
+                    if k in ["id", "label", "fn-type"]:
+                        new_fn.set(k, v)
                 self._create_label(new_fn, fn)
                 self._create_p(new_fn, fn)
                 fn.addprevious(new_fn)
@@ -2532,7 +2526,7 @@ class Document:
         return items
 
 
-class DocumentComponentFile:
+class FileLocation:
     def __init__(self, href):
         self.href = href
         self.basename = os.path.basename(href)
@@ -2540,13 +2534,17 @@ class DocumentComponentFile:
 
     @property
     def remote(self):
-        return os.path.join(config.get("STATIC_URL_FILE"), self.href[1:])
+        file_path = self.href
+        if file_path.startswith("/"):
+            file_path = file_path[1:]
+        return os.path.join(config.get("STATIC_URL_FILE"), file_path)
 
     @property
     def local(self):
         parts = self.remote.split("/")
-        local = "/".join(parts[-4:])
-        return os.path.join(config.get("SITE_SPS_PKG_PATH"), local)
+        _local = "/".join(parts[-4:])
+        _local = os.path.join(config.get("SITE_SPS_PKG_PATH"), _local)
+        return _local.replace("//", "/")
 
     def ent2char(self, data):
         return html.unescape(data.decode("utf-8")).encode("utf-8").strip()
@@ -2578,6 +2576,9 @@ class DocumentComponentFile:
             logger.exception("Baixar %s: %s" % (self.remote, e))
         else:
             dirname = os.path.dirname(self.local)
+            if not dirname.startswith(config.get("SITE_SPS_PKG_PATH")):
+                logger.info("%s: valor inválido de caminho local para ativo digital" % self.local)
+                return
             if not os.path.isdir(dirname):
                 os.makedirs(dirname)
             with open(self.local, "wb") as fp:
@@ -2588,12 +2589,50 @@ class DocumentComponentFile:
             return _content
 
 
+def fix_relative_paths(body, file_location):
+    for tag, attr in [("img", "src"), ("a", "href")]:
+        for node in body.findall(".//{}[@{}]".format(tag, attr)):
+            location = node.get(attr)
+            new_location = None
+            if location.startswith("./"):
+                new_location = os.path.join(file_location, location)
+            elif (":" not in location and
+                  location[0] != "#" and
+                  "/" not in location and
+                  location.count(".") == 1):
+                new_location = os.path.join(file_location, location)
+            if new_location and new_location != location:
+                logger.info(
+                    "Trocado de {} para {}".format(location, new_location))
+                node.set(attr, new_location)
+
+
+def fix_paths(body):
+    for tag, attr in [("img", "src"), ("a", "href")]:
+        for node in body.findall(".//{}[@{}]".format(tag, attr)):
+            location = node.get(attr)
+            old_location = location
+            if " " in location:
+                location = "".join(location.split())
+            if "../img/revistas" in location:
+                location = location[location.find("/img"):]
+            if location.startswith("img/revistas"):
+                location = "/" + location
+            location = location.replace("/img/fbpe", "/img/revistas")
+            if old_location != location:
+                logger.info(
+                    "Trocado de {} para {}".format(old_location, location))
+                node.set(attr, location)
+
+
 class HTMLPage:
 
     def __init__(self, href):
-        self.file = DocumentComponentFile(href)
-        self.html_tree = self._load()
-        self.body = self.html_tree.find(".//body")
+        self.file = FileLocation(href)
+        html_tree = self._load()
+        self.body = html_tree.find(".//body")
+        fix_paths(self.body)
+        fix_relative_paths(self.body, href)
 
     def _load(self):
         # TODO: Tratar excecoes
@@ -2631,11 +2670,14 @@ class InsertExternalHTMLBodyIntoXMLBody:
                     continue
 
                 value = href.split("/")[0]
-                if "." in value and len(value.split(".")) > 2:
-                    # pode ser URL
-                    a_href.set("link-type", "external")
-                    logger.info("Classificou a[@href]: %s" % etree.tostring(a_href))
-                    continue
+                if "." in value:
+                    if href.startswith("./") or href.startswith("../"):
+                        pass
+                    else:
+                        # pode ser URL
+                        a_href.set("link-type", "external")
+                        logger.info("Classificou a[@href]: %s" % etree.tostring(a_href))
+                        continue
 
                 basename = os.path.basename(href)
                 f, ext = os.path.splitext(basename)
@@ -2653,6 +2695,7 @@ class InsertExternalHTMLBodyIntoXMLBody:
         while True:
             self._classify_a_href()
             q = self._import_html_file_content()
+            fix_paths(self.body)
             if q == 0:
                 break
 
@@ -2661,13 +2704,14 @@ class InsertExternalHTMLBodyIntoXMLBody:
         for node in nodes:
             if node.get("link-type") != "internal":
                 location = node.get("src", node.get("href"))
-                logger.info("Download ou garante que {} está no pacote".format(location))
+                logger.info(etree.tostring(node))
+                logger.info("Verifica se já foi feito download / faz download: {}".format(location))
                 attr_name = "src" if node.get("src") else "href"
-                asset_file = DocumentComponentFile(location)
+                asset_file = FileLocation(location)
                 if asset_file.content:
                     node.set(attr_name, asset_file.basename)
                     node.set("link-type", "internal")
-                    logger.info("Atualiza %s/@%s: %s" %
+                    logger.info("Baixado. Atualiza %s/@%s: %s" %
                                 (node.tag, attr_name, etree.tostring(node)))
 
     def _import_html_file_content(self):
@@ -2760,7 +2804,6 @@ class InsertExternalHTMLBodyIntoXMLBody:
         tag = "img"
         ign, ext = os.path.splitext(location)
         if ext.lower() not in self.IMG_EXTENSIONS:
-            print(ext.lower())
             tag = "media"
         asset = etree.Element(tag)
         asset.set("src", location)

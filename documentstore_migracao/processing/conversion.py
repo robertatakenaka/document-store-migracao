@@ -55,9 +55,9 @@ def convert_article_ALLxml():
             convert_article_xml(
                 os.path.join(config.get("SOURCE_PATH"), file_xml))
         except Exception as ex:
-            logger.error(file_xml)
+            logger.error("FALHA EM CONVERSAO: %s" % file_xml)
             logger.exception(ex)
-            # raise
+            #raise
 
 
 def conversion_journal_to_bundle(journal: dict) -> None:
