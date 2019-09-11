@@ -1288,22 +1288,23 @@ class ConvertElementsWhichHaveIdPipeline(object):
         self._ppl = plumber.Pipeline(
             self.SetupPipe(),
             self.RemoveThumbImgPipe(),
-            self.AddNameAndIdToElementAPipe(),
+            self.CompleteElementAWithNameAndIdPipe(),
             self.AddAttributeXMLTextToElementAPipe(),
+            self.MoveANameWhichAreAtTheEndOfAnyElement(),
             self.IdentifyAssetLabelCandidatesPipe(),
             self.IdentifyFnLabelCandidatesPipe(),
             self.DeduceAndSuggestConversionPipe(super_obj=html_pipeline),
             self.ApplySuggestedConversionPipe(super_obj=html_pipeline),
             self.AddAssetInfoToTablePipe(super_obj=html_pipeline),
             self.CompleteAssetPipe(),
-            self.IdentifyAssetLabelAndCaptionPipe(),
-            self.ImgPipe(super_obj=html_pipeline),
-            self.MoveFnPipe(),
-            self.AddContentToFnPipe(),
-            self.NotFnPipe(),
-            self.FnLabelAndPPipe(),
-            self.FixLabel(),
-            self.TargetPipe(),
+            # self.IdentifyAssetLabelAndCaptionPipe(),
+            # self.ImgPipe(super_obj=html_pipeline),
+            # self.MoveFnPipe(),
+            # self.AddContentToFnPipe(),
+            # self.NotFnPipe(),
+            # self.FnLabelAndPPipe(),
+            # self.FixLabel(),
+            # self.TargetPipe(),
         )
 
     def deploy(self, raw):
@@ -1439,7 +1440,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             _process(xml, "img", self.parser_node)
             return data
 
-    class AddNameAndIdToElementAPipe(plumber.Pipe):
+    class CompleteElementAWithNameAndIdPipe(plumber.Pipe):
         """Garante que todos os elemento a[@name] e a[@id] tenham @name e @id.
         Corrige id e name caso contenha caracteres nao alphanum.
         """
@@ -1496,6 +1497,36 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self._fix_a_href(xml)
             _process(xml, "a[@id]", self.parser_node)
             _process(xml, "a[@name]", self.parser_node)
+            return data
+
+    class MoveANameWhichAreAtTheEndOfAnyElement(plumber.Pipe):
+
+        def _select(self, xml):
+            for a in xml.findall(".//a[@name]"):
+                a.set("move", "true")
+
+        def _find(self, xml):
+            for a in xml.findall(".//a[@move]"):
+                if a.getnext() is None and not (a.tail or "").strip():
+                    return a
+                else:
+                    a.attrib.pop("move")
+
+        def _move_a_name(self, a_name):
+            new_a_name = deepcopy(a_name)
+            p = a_name.getparent()
+            p.addnext(new_a_name)
+            p.remove(a_name)
+            a_name = new_a_name
+
+        def transform(self, data):
+            raw, xml = data
+            self._select(xml)
+            while True:
+                found = self._find(xml)
+                if found is None:
+                    break
+                self._move_a_name(found)
             return data
 
     class AddAttributeXMLTextToElementAPipe(plumber.Pipe):
@@ -2039,6 +2070,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             i = 0
             while True:
                 _next = _next.getnext()
+
                 if label is not None and (img is not None or table is not None):
                     break
                 if i > max_times:
@@ -2072,14 +2104,15 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 else:
                     xml_text = asset_node.get("xml_text")
                     text = get_node_inner_text(_next)
-                    if "." in xml_text:
-                        start = xml_text.replace(".", "").split()[0]
-                        if text.startswith(start.capitalize()):
+                    if xml_text and text:
+                        if "." in xml_text:
+                            start = xml_text.replace(".", "").split()[0]
+                            if text.startswith(start.capitalize()):
+                                label = _next
+                                label.set("content-type", "label")
+                        elif xml_text.lower().startswith(text.lower()):
                             label = _next
                             label.set("content-type", "label")
-                    elif xml_text.lower().startswith(text.lower()):
-                        label = _next
-                        label.set("content-type", "label")
                 i += 1
                 children.append(_next)
             return children, label, img, table
@@ -2096,13 +2129,13 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 for child in children:
                     asset_node.append(deepcopy(child))
                     p.remove(child)
-                    if asset_node.findall(".//img") is not None:
+                    if asset_node.find(".//img") is not None:
                         break
             elif table is not None:
                 for child in children:
                     asset_node.append(deepcopy(child))
                     p.remove(child)
-                    if asset_node.findall(".//table") is not None:
+                    if asset_node.find(".//table") is not None:
                         break
 
         def transform(self, data):
