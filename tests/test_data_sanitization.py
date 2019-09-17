@@ -43,22 +43,6 @@ class TestDataSanitizationPipeline(unittest.TestCase):
             b"""<root><p><table-wrap><table><tr><td>TEXTO</td></tr></table></table-wrap></p></root>""",
         )
 
-    def test__add_p_in_fn(self):
-        text = """<root><fn>TEXTO</fn></root>"""
-
-        raw, transformed = self._transform(text, self.pipeline.AddPinFN())
-        self.assertEqual(
-            etree.tostring(transformed), b"""<root><fn><p>TEXTO</p></fn></root>"""
-        )
-
-    def test__add_p_in_fn_case_2(self):
-        text = """<root><fn><p>TEXTO</p></fn></root>"""
-
-        raw, transformed = self._transform(text, self.pipeline.AddPinFN())
-        self.assertEqual(
-            etree.tostring(transformed), b"""<root><fn><p>TEXTO</p></fn></root>"""
-        )
-
     def test__add_def_in_defItem(self):
         text = """<root><def-list><def-item>TEXTO<p>poly(A)polymerase I</p></def-item></def-list></root>"""
 

@@ -50,12 +50,14 @@ def convert_article_ALLxml():
     for file_xml in tqdm(list_files_xmls):
 
         try:
+            logger.info(file_xml)
+            #print(file_xml)
             convert_article_xml(
                 os.path.join(config.get("SOURCE_PATH"), file_xml))
         except Exception as ex:
-            logger.error(file_xml)
+            logger.error("FALHA EM CONVERSAO: %s" % file_xml)
             logger.exception(ex)
-            # raise
+            #raise
 
 
 def conversion_journal_to_bundle(journal: dict) -> None:

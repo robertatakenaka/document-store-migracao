@@ -1,4 +1,3 @@
-
 from documentstore_migracao import config
 from documentstore_migracao.utils import files
 
@@ -6,6 +5,7 @@ from documentstore_migracao.utils import files
 STARTSWITH_RETURNS_TAG_AND_REFTYPE = tuple(
     [tuple(item.strip().split()) for item in open(config.CONVERSION_TAGS).readlines()]
 )
+
 
 class Inferer:
 
@@ -17,20 +17,12 @@ class Inferer:
     def tag_and_reftype_from_name(self, name):
         if not name:
             return
-        for prefix in ["not", "_ftnref"]:
-            if name.startswith(prefix) and name[len(prefix) :].isdigit():
-                return
-        for prefix in ["titulo", "title", "tx", "top", "home"]:
-            if name.startswith(prefix):
-                return
         for prefix, tag in STARTSWITH_RETURNS_TAG_AND_REFTYPE:
             if name.startswith(prefix):
                 if len(prefix) == 1 and not name[len(prefix) :].isdigit():
                     return "fn", "fn"
                 return tag, self.ref_type(tag)
         if not name[0].isalnum():
-            if name[0] == "*":
-                return
             return "symbol", "fn"
         return "fn", "fn"
 
@@ -50,7 +42,6 @@ class Inferer:
                 return tag, self.ref_type(tag)
         if "corresp" in a_href_text:
             return "corresp", "corresp"
-
 
     def tag_and_reftype_and_id_from_filepath(self, file_path, elem_name=None):
         filename, __ = files.extract_filename_ext_by_path(file_path)
