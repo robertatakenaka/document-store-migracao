@@ -42,6 +42,10 @@ class Inferer:
                 return tag, self.ref_type(tag)
         if "corresp" in a_href_text:
             return "corresp", "corresp"
+        if a_href_text.isalpha():
+            if a_href_text[:4] in ["intr", "meto", "méto", "disc", "bibr", "resu"]:
+                return "target", "menu"
+            return "fig", "other"
 
     def tag_and_reftype_and_id_from_filepath(self, file_path, elem_name=None):
         filename, __ = files.extract_filename_ext_by_path(file_path)

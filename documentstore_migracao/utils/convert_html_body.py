@@ -251,20 +251,7 @@ class HTML2SPSPipeline(object):
                 # formado devemos so trocar a tag
                 # e retorna para continuar o Pipe
                 return
-            img = node.find("img")
-
-            if img is not None:
-                graphic = etree.Element("graphic")
-                graphic.set(
-                    "{http://www.w3.org/1999/xlink}href", img.attrib["src"])
-                graphic.append(deepcopy(node))
-                img.addprevious(graphic)
-                parent = img.getparent()
-                parent.remove(img)
-                parent = node.getparent()
-                parent.remove(node)
-                return
-
+            node.set("{http://www.w3.org/1999/xlink}href", href)
             node_text = (node.text or "").strip()
             if href == node_text:
                 return
@@ -280,9 +267,7 @@ class HTML2SPSPipeline(object):
                 temp.tail = texts[1]
                 node.addprevious(temp)
                 etree.strip_tags(root, "AHREFPIPEREMOVETAG")
-            elif node_text == "":
-                node.text = href
-            else:
+            elif node_text:
                 node.tag = "ext-link"
                 node.set("ext-link-type", "email")
                 node.set("{http://www.w3.org/1999/xlink}href", href)
@@ -537,6 +522,8 @@ class HTML2SPSPipeline(object):
             """
             logger.info("BR2PPipe._create_new_node - inicio")
             new = etree.Element(node.tag)
+            for attr, value in node.attrib.items():
+                new.set(attr, value)
             text = node.text
             nodes = []
             for i, child in enumerate(node.getchildren()):
@@ -557,6 +544,7 @@ class HTML2SPSPipeline(object):
                 if node is None:
                     break
                 new = self._create_new_node(node)
+
                 node.addprevious(new)
                 if node.tag == "p":
                     new.tag = "BRTOPPIPEREMOVETAG"
@@ -1311,10 +1299,10 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.ImgPipe(),
             self.MoveFnPipe(),
             self.AddContentToFnPipe(),
-            #self.IdentifyFnLabelAndPPipe(),
             self.IdentifyFnLabelAndPPipe(),
             self.FixFnContent(),
             self.TargetPipe(),
+            self.GraphicInXrefPipe(),
         )
 
     def deploy(self, raw):
@@ -1804,6 +1792,19 @@ class ConvertElementsWhichHaveIdPipeline(object):
             _process(xml, "img", self.parser_node)
             return data
 
+    class GraphicInXrefPipe(plumber.Pipe):
+        def parser_node(self, node):
+            graphic = node.find("graphic")
+            new = etree.Element("styled-content")
+            new.append(deepcopy(graphic))
+            node.remove(graphic)
+            node.append(new)
+
+        def transform(self, data):
+            raw, xml = data
+            _process(xml, "xref[graphic]", self.parser_node)
+            return data
+
     class MoveFnPipe(plumber.Pipe):
         def transform(self, data):
             raw, xml = data
@@ -2121,10 +2122,12 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     if xref is not None:
                         xref.tag = "REMOVEPFIXASSETCONTENT"
                     label_of = node.find(".//*[@label-of]")
+
                     if label_of is not None:
                         label_of.attrib.clear()
                     for p in node.findall("p"):
                         p.tag = "REMOVEPFIXASSETCONTENT"
+
             etree.strip_tags(xml, "REMOVEPFIXASSETCONTENT")
             return data
 
@@ -2303,6 +2306,10 @@ class ConvertElementsWhichHaveIdPipeline(object):
         def transform(self, data):
             raw, xml = data
             self.get_fn_items(xml)
+            for node in xml.findall(".//target"):
+                id = node.get("id")
+                node.attrib.clear()
+                node.set("id", id)
             for fn in xml.findall(".//fn"):
                 _is_target = self._is_target(fn)
                 if _is_target:
