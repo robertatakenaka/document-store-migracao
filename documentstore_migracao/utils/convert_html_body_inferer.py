@@ -10,7 +10,7 @@ STARTSWITH_RETURNS_TAG_AND_REFTYPE = tuple(
 class Inferer:
 
     REFTYPE = {"table-wrap": "table", "ref": "bibr"}
-    BODY_SECS = ("intr", "meto", "méto", "disc", "bibr", "resu", "abst", "mate", "refe", "ackn")
+    BODY_SECS = ("intr", "meto", "méto", "disc", "bibr", "resu", "abst", "mate", "refe", "ackn", "text")
 
     def ref_type(self, elem_name):
         return self.REFTYPE.get(elem_name, elem_name)
@@ -31,10 +31,6 @@ class Inferer:
         if not (a_href_text or "").strip():
             return
         a_href_text = a_href_text.strip().lower()
-        if "image" in a_href_text:
-            return "fig",  "fig"
-        if "annex" in a_href_text:
-            return "app",  "app"
         for i, c in enumerate(a_href_text):
             if c.isalnum():
                 break
@@ -42,11 +38,17 @@ class Inferer:
         for prefix, tag in STARTSWITH_RETURNS_TAG_AND_REFTYPE:
             if text.startswith(prefix) and len(prefix) > 1:
                 return tag, self.ref_type(tag)
-        if "corresp" in a_href_text:
-            return "corresp", "corresp"
         if a_href_text[0].isalpha():
+            if len(a_href_text) == 1:
+                return "fn", "fn"
             if a_href_text[:4] in self.BODY_SECS:
                 return "target", "other"
+            if "corresp" in text or "address" in text or "endereço" in text:
+                return "corresp", "corresp"
+            if "image" in text:
+                return "fig",  "fig"
+            if "annex" in text:
+                return "app",  "app"
             return "to-define", "to-define"
         return "fn", "fn"
 

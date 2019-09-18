@@ -2029,7 +2029,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
             raw, xml = data
             logger.info("CompleteAssetPipe - fig")
             for asset_node in xml.findall(".//fig"):
-                print(etree.tostring(asset_node))
                 self.complete_asset_node(asset_node)
             logger.info("CompleteAssetPipe - table-wrap")
             for asset_node in xml.findall(".//table-wrap"):
@@ -2126,10 +2125,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             raw, xml = data
             logger.info("IdentifyAssetLabelAndCaptionPipe")
             for asset_node in xml.findall(".//*[@fix='asset']"):
-                print(etree.tostring(asset_node))
                 self.identify_label_and_caption(asset_node)
-                print(etree.tostring(asset_node))
-                print(".-----")
                 id = asset_node.get("id")
                 asset_node.attrib.clear()
                 asset_node.set("id", id)
@@ -2691,7 +2687,6 @@ class InsertExternalHTMLBodyIntoXMLBody:
             changes = fix_paths(self.body)
             self._classify_a_href()
             q = self._import_html_file_content()
-            print(changes + q)
             if q + changes == 0:
                 break
 
