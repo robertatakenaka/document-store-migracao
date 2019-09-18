@@ -10,6 +10,7 @@ STARTSWITH_RETURNS_TAG_AND_REFTYPE = tuple(
 class Inferer:
 
     REFTYPE = {"table-wrap": "table", "ref": "bibr"}
+    BODY_SECS = ("intr", "meto", "méto", "disc", "bibr", "resu", "abst", "mate", "refe", "ackn")
 
     def ref_type(self, elem_name):
         return self.REFTYPE.get(elem_name, elem_name)
@@ -30,11 +31,12 @@ class Inferer:
         if not (a_href_text or "").strip():
             return
         a_href_text = a_href_text.strip().lower()
-
+        if "image" in a_href_text:
+            return "fig",  "fig"
+        if "annex" in a_href_text:
+            return "app",  "app"
         for i, c in enumerate(a_href_text):
-            if not c.isalnum():
-                continue
-            else:
+            if c.isalnum():
                 break
         text = a_href_text[i:]
         for prefix, tag in STARTSWITH_RETURNS_TAG_AND_REFTYPE:
@@ -42,10 +44,11 @@ class Inferer:
                 return tag, self.ref_type(tag)
         if "corresp" in a_href_text:
             return "corresp", "corresp"
-        if a_href_text.isalpha():
-            if a_href_text[:4] in ["intr", "meto", "méto", "disc", "bibr", "resu"]:
-                return "target", "menu"
-            return "fig", "other"
+        if a_href_text[0].isalpha():
+            if a_href_text[:4] in self.BODY_SECS:
+                return "target", "other"
+            return "to-define", "to-define"
+        return "fn", "fn"
 
     def tag_and_reftype_and_id_from_filepath(self, file_path, elem_name=None):
         filename, __ = files.extract_filename_ext_by_path(file_path)

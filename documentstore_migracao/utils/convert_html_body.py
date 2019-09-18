@@ -230,6 +230,7 @@ class HTML2SPSPipeline(object):
             raw, xml = data
             html_page = InsertExternalHTMLBodyIntoXMLBody(xml)
             html_page.remote_to_local()
+            logger.info("ConvertRemoteLocation2LocalLocation - fim")
             return data
 
     class AHrefPipe(plumber.Pipe):
@@ -1592,11 +1593,28 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 if complete:
                     text, tag, reftype, new_id = complete
                 else:
-                    tag_reftype = self.inferer.tag_and_reftype_from_a_href_text(
-                        a_name.tail
-                    )
+                    tag_reftype = None
+                    next_texts = [a_name.tail]
+                    _next = a_name
+                    img = None
+                    for i in range(0, 2):
+                        _next = _next.getnext()
+                        if _next is None:
+                            break
+                        if _next.tag == "img" or _next.find(".//img") is not None:
+                            img = True
+                        next_texts.append(get_node_inner_text(_next))
+                    for next_text in next_texts:
+                        if next_text:
+                            break
+                    if next_text:
+                        tag_reftype = self.inferer.tag_and_reftype_from_a_href_text(
+                            next_text
+                        )
                     if not tag_reftype:
                         tag_reftype = self.inferer.tag_and_reftype_from_name(name)
+                    if not tag_reftype and img:
+                        tag_reftype = "fig", "fig"
                     if tag_reftype:
                         tag, reftype = tag_reftype
                         new_id = name
@@ -1921,7 +1939,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 parent = _next.getparent()
                 parent.remove(_next)
 
-
     class CompleteAssetPipe(plumber.Pipe):
         def _find_xml_text_in_node(self, xml_text, node_text):
             if "." in xml_text:
@@ -1944,8 +1961,12 @@ class ConvertElementsWhichHaveIdPipeline(object):
             for item in [label, img, table]:
                 if item is not None:
                     max_times -= 1
+            if asset_node.tail:
+                asset_node.text = asset_node.tail
+                asset_node.tail = ""
             i = 0
             while True:
+
                 _next = _next.getnext()
                 if label is not None and (img is not None or table is not None):
                     break
@@ -1971,6 +1992,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 else:
                     xml_text = asset_node.get("xml_text")
                     text = get_node_inner_text(_next)
+
                     if xml_text and text:
                         if self._find_xml_text_in_node(xml_text, text):
                             label = _next
@@ -2007,6 +2029,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             raw, xml = data
             logger.info("CompleteAssetPipe - fig")
             for asset_node in xml.findall(".//fig"):
+                print(etree.tostring(asset_node))
                 self.complete_asset_node(asset_node)
             logger.info("CompleteAssetPipe - table-wrap")
             for asset_node in xml.findall(".//table-wrap"):
@@ -2044,6 +2067,22 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
         def identify_label_and_caption(self, asset_node):
             label_parent = asset_node.find(".//*[@content-type='label']")
+            search_expr = asset_node.get("xml_text")
+            if not search_expr[0].isalpha():
+                search_expr = asset_node.get("xml_tag")
+            if label_parent is None:
+                for node in asset_node.findall("*"):
+                    label_text = get_node_inner_text(node).lower()
+                    if label_text.startswith(search_expr):
+                        node.set("content-type", "label")
+                        label_parent = node
+                        break
+                for node in asset_node.findall(".//*"):
+                    if (node.text or "").lower().startswith(search_expr):
+                        if node.tag == "bold":
+                            node.set("label-of", asset_node.get("id"))
+                        break
+
             if label_parent is not None:
                 bold = label_parent.find(".//bold[@label-of]")
                 if bold is not None:
@@ -2052,6 +2091,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     self._guess_label_and_caption(asset_node, label_parent)
 
         def _guess_label_and_caption(self, asset_node, label_parent):
+            # FIXME
             found = None
             for node in label_parent.findall(".//*"):
                 text = node.text
@@ -2086,7 +2126,10 @@ class ConvertElementsWhichHaveIdPipeline(object):
             raw, xml = data
             logger.info("IdentifyAssetLabelAndCaptionPipe")
             for asset_node in xml.findall(".//*[@fix='asset']"):
+                print(etree.tostring(asset_node))
                 self.identify_label_and_caption(asset_node)
+                print(etree.tostring(asset_node))
+                print(".-----")
                 id = asset_node.get("id")
                 asset_node.attrib.clear()
                 asset_node.set("id", id)
@@ -2489,7 +2532,7 @@ class FileLocation:
     def ent2char(self, data):
         return html.unescape(data.decode("utf-8")).encode("utf-8").strip()
 
-    def get_remote_content(self, timeout=30):
+    def get_remote_content(self, timeout=1):
         with request.urlopen(self.remote, timeout=timeout) as fp:
             return fp.read()
 
@@ -2558,11 +2601,11 @@ def fix_paths(body):
             for node in body.findall(".//{}[@{}]".format(tag, attr)):
                 location = node.get(attr)
                 old_location = location
+                if '/img' in location:
+                    location = location[location.find("/img"):]
                 if " " in location:
                     location = "".join(location.split())
-                if "../img/revistas" in location:
-                    location = location[location.find("/img"):]
-                if location.startswith("img/revistas"):
+                if location.startswith("img/"):
                     location = "/" + location
                 location = location.replace("/img/fbpe", "/img/revistas")
                 if old_location != location:
@@ -2648,19 +2691,26 @@ class InsertExternalHTMLBodyIntoXMLBody:
             changes = fix_paths(self.body)
             self._classify_a_href()
             q = self._import_html_file_content()
+            print(changes + q)
             if q + changes == 0:
                 break
 
     def _download_files(self):
         nodes = list(set(self.xml.xpath(".//*[@link-type='download']|.//*[@src]")))
+        downloaded = {}
         for node in nodes:
             if node.get("link-type") != "internal":
-                location = node.get("src", node.get("href"))
-                logger.info("Verifica se já foi feito download / faz download: %s" % location)
                 attr_name = "src" if node.get("src") else "href"
-                asset_file = FileLocation(location)
-                if asset_file.content:
-                    node.set(attr_name, asset_file.basename)
+                location = node.get(attr_name)
+                logger.info("Verifica se já foi feito download / faz download: %s" % location)
+                basename = downloaded.get(location)
+                if basename is None:
+                    asset_file = FileLocation(location)
+                    if asset_file.content:
+                        basename = asset_file.basename
+                        downloaded[location] = basename
+                if basename:
+                    node.set(attr_name, basename)
                     node.set("link-type", "internal")
                     logger.info("Baixado. Altera o caminho: %s" % etree.tostring(node))
 
