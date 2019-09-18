@@ -275,11 +275,11 @@ class HTML2SPSPipeline(object):
 
         def parser_node(self, node):
             href = node.get("href")
-            if href.startswith("#") or node.get("link-type") == "internal":
+            if href.startswith("#") or node.get("lktype") == "internal":
                 return
             if "mailto" in href or "@" in href:
                 return self._create_email(node)
-            if ":" in href or node.get("link-type") == "external":
+            if ":" in href or node.get("lktype") == "external":
                 return self._create_ext_link(node)
 
         def transform(self, data):
@@ -1396,30 +1396,36 @@ class ConvertElementsWhichHaveIdPipeline(object):
     class AddAttributeXMLTextToElementAPipe(plumber.Pipe):
 
         def add_xml_text_to_a_href(self, xml):
-            previous_xml_text = None
-            previous = None
-            for i, node in enumerate(xml.findall(".//a[@href]")):
+            previous = etree.Element("none")
+            for i, node in enumerate(xml.findall(".//a[@lktype='internal']")):
+                logger.info("")
+                logger.info("AddAttributeXMLTextToElementAPipe: %s" % etree.tostring(previous))
+                logger.info("AddAttributeXMLTextToElementAPipe: %s" % etree.tostring(node))
                 href = node.get("href")
-                if ":" in href:
-                    continue
                 text = get_node_inner_text(node).lower()
                 if not text:
                     continue
                 node.set("xml_text", text)
-                previous_href = None
-                if previous is not None:
-                    previous_href = previous.get("href")
-                if (text[0].isdigit() and previous_xml_text and
-                        previous_xml_text[0].isalpha() and previous_href):
-                    pos = - len(text)
-
-                    if (previous_href == node.get("href") or
-                            previous_href[:pos] == node.get("href")[:pos]):
-                        label = previous_xml_text.split()[0]
-                        node.set("xml_text", label + " " + text)
-                        logger.info(etree.tostring(previous))
-                        logger.info(etree.tostring(node))
-                previous_xml_text = text
+                if text[0].isdigit():
+                    # verificar se é um número de ativo digital ou de fn
+                    is_asset = node.get("asset")
+                    if not is_asset:
+                        a_name = xml.find(".//a[@name='{}']".format(href[1:]))
+                        if a_name is not None:
+                            if a_name.find(".//img") is not None:
+                                is_asset = True
+                            elif a_name.find(".//table") is not None:
+                                is_asset = True
+                    if not is_asset and previous.get("href") and node.get("href"):
+                        previous_href = previous.get("href")
+                        pos = -len(text)
+                        if previous_href[:pos] == node.get("href")[:pos]:
+                            is_asset = True
+                    if is_asset:
+                        previous_xml_text = previous.get("xml_text")
+                        if previous_xml_text:
+                            label = previous_xml_text.split()[0]
+                            node.set("xml_text", label + " " + text)
                 previous = node
 
         def add_xml_text_to_other_a(self, xml):
@@ -1500,7 +1506,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             if text:
                 node.set("xml_label", text)
 
-        def _add_xml_attribs_to_a_href_from_text(self, texts):
+        def _deduce_from_a_href_text(self, texts):
             """
             De acordo com o a[@xml_text] e/ou a.text,
             adiciona no elemento a, atributos:
@@ -1509,8 +1515,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
             xml_reftype
             xml_label
             """
-            for text, data in texts.items():
-                nodes_with_id, nodes_without_id = data
+            for text, nodes in texts.items():
+                nodes_with_id, nodes_without_id = nodes
                 tag_reftype = self.inferer.tag_and_reftype_from_a_href_text(text)
                 if not tag_reftype:
                     continue
@@ -1545,13 +1551,14 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     node.attrib.get("xml_reftype"),
                     node.attrib.get("xml_id"),
                 ]
+                data = [item if item != "to-define" else None for item in data]
                 if all(data):
                     complete = data
                 else:
                     incomplete.append(node)
             return complete, incomplete
 
-        def _add_xml_attribs_to_a_href_from_file_paths(self, file_paths):
+        def _deduce_from_file_paths(self, file_paths):
             """
             De acordo com o a[@href] cujo conteúdo é nome de arquivo,
             adiciona no elemento a, atributos:
@@ -1577,7 +1584,28 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     for node in incomplete:
                         self._update(node, tag, reftype, new_id, text)
 
-        def _add_xml_attribs_to_a_name(self, a_names):
+        def a_name_data_to_add_xml_attribs(self, a_name):
+            children = a_name.getchildren()
+            if children:
+                next_texts = [a_name.text]
+                _next = children[0]
+            else:
+                next_texts = [a_name.tail]
+                _next = a_name
+            img = _next.tag == "img"
+            for i in range(0, 2):
+                _next = _next.getnext()
+                if _next is None:
+                    break
+                if _next.tag == "img" or _next.find(".//img") is not None:
+                    img = img and True
+                next_texts.append(get_node_inner_text(_next))
+            for next_text in next_texts:
+                if next_text:
+                    break
+            return next_text, img
+
+        def _deduce_from_a_name(self, a_names):
             """
             De acordo com o a[@name],
             adiciona no elemento a, atributos:
@@ -1594,25 +1622,15 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     text, tag, reftype, new_id = complete
                 else:
                     tag_reftype = None
-                    next_texts = [a_name.tail]
-                    _next = a_name
-                    img = None
-                    for i in range(0, 2):
-                        _next = _next.getnext()
-                        if _next is None:
-                            break
-                        if _next.tag == "img" or _next.find(".//img") is not None:
-                            img = True
-                        next_texts.append(get_node_inner_text(_next))
-                    for next_text in next_texts:
-                        if next_text:
-                            break
+                    next_text, img = self.a_name_data_to_add_xml_attribs(a_name)
                     if next_text:
                         tag_reftype = self.inferer.tag_and_reftype_from_a_href_text(
                             next_text
                         )
+
                     if not tag_reftype:
                         tag_reftype = self.inferer.tag_and_reftype_from_name(name)
+
                     if not tag_reftype and img:
                         tag_reftype = "fig", "fig"
                     if tag_reftype:
@@ -1639,7 +1657,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 ]:
                     return found
 
-        def _add_xml_attribs_to_img(self, images):
+        def _deduce_from_img(self, images):
             """
             De acordo com o img[@src],
             adiciona no elemento a, atributos:
@@ -1668,12 +1686,12 @@ class ConvertElementsWhichHaveIdPipeline(object):
             raw, xml = data
             document = Document(xml)
             texts, file_paths = document.a_href_items
+            self._deduce_from_a_href_text(texts)
+            self._deduce_from_file_paths(file_paths)
             names = document.a_names
+            self._deduce_from_a_name(names)
             images = document.images
-            self._add_xml_attribs_to_a_href_from_text(texts)
-            self._add_xml_attribs_to_a_name(names)
-            self._add_xml_attribs_to_a_href_from_file_paths(file_paths)
-            self._add_xml_attribs_to_img(images)
+            self._deduce_from_img(images)
             return data
 
     class IdentifyFnLabelCandidatesPipe(plumber.Pipe):
@@ -2647,16 +2665,16 @@ class InsertExternalHTMLBodyIntoXMLBody:
 
     def _classify_a_href(self):
         for a_href in self.xml.findall(".//a[@href]"):
-            if not a_href.get("link-type"):
+            if not a_href.get("lktype"):
 
                 href = a_href.get("href")
                 if ":" in href:
-                    a_href.set("link-type", "external")
+                    a_href.set("lktype", "external")
                     logger.info("Classificou a[@href]: %s" % etree.tostring(a_href))
                     continue
 
                 if href and href[0] == "#":
-                    a_href.set("link-type", "internal")
+                    a_href.set("lktype", "internal")
                     logger.info("Classificou a[@href]: %s" % etree.tostring(a_href))
                     continue
 
@@ -2666,20 +2684,20 @@ class InsertExternalHTMLBodyIntoXMLBody:
                         pass
                     else:
                         # pode ser URL
-                        a_href.set("link-type", "external")
+                        a_href.set("lktype", "external")
                         logger.info("Classificou a[@href]: %s" % etree.tostring(a_href))
                         continue
 
                 basename = os.path.basename(href)
                 f, ext = os.path.splitext(basename)
                 if ".htm" in ext:
-                    a_href.set("link-type", "html")
+                    a_href.set("lktype", "html")
                 elif href.startswith("/pdf/"):
-                    a_href.set("link-type", "download")
+                    a_href.set("lktype", "download")
                 elif href.startswith("/img/revistas"):
-                    a_href.set("link-type", "asset")
+                    a_href.set("lktype", "asset")
                 else:
-                    logger.info("link-type=???")
+                    logger.info("lktype=???")
                 logger.info("Classificou a[@href]: %s" % etree.tostring(a_href))
 
     def _import_all_href_html_files(self):
@@ -2691,32 +2709,33 @@ class InsertExternalHTMLBodyIntoXMLBody:
                 break
 
     def _download_files(self):
-        nodes = list(set(self.xml.xpath(".//*[@link-type='download']|.//*[@src]")))
+        nodes = set(self.xml.xpath(".//*[@lktype='download']|.//*[@src]"))
         downloaded = {}
         for node in nodes:
-            if node.get("link-type") != "internal":
-                attr_name = "src" if node.get("src") else "href"
-                location = node.get(attr_name)
-                logger.info("Verifica se já foi feito download / faz download: %s" % location)
-                basename = downloaded.get(location)
-                if basename is None:
-                    asset_file = FileLocation(location)
-                    if asset_file.content:
-                        basename = asset_file.basename
-                        downloaded[location] = basename
-                if basename:
-                    node.set(attr_name, basename)
-                    node.set("link-type", "internal")
-                    logger.info("Baixado. Altera o caminho: %s" % etree.tostring(node))
+            attr_name = "src" if node.get("src") else "href"
+            location = node.get(attr_name)
+            logger.info(
+                "Verifica se já foi feito download / faz download: %s" % location)
+            basename = downloaded.get(location)
+            if basename is None:
+                asset_file = FileLocation(location)
+                if asset_file.content:
+                    basename = asset_file.basename
+                    downloaded[location] = basename
+            if basename:
+                node.set(attr_name, basename)
+                node.set("lktype", "internal")
+                logger.info(
+                    "Baixado. Altera o caminho: %s" % etree.tostring(node))
 
     def _import_html_file_content(self):
         new_p_items = []
         _new_p_items = {}
         for p in self.p_nodes:
-            for a_href in p.findall(".//a[@link-type='html']"):
+            for a_href in p.findall(".//a[@lktype='html']"):
                 _new_p_items[a_href] = p
 
-        for a_href in self.xml.findall(".//a[@link-type='html']"):
+        for a_href in self.xml.findall(".//a[@lktype='html']"):
             logger.info("Importar conteúdo de %s" % etree.tostring(a_href))
             href = a_href.get("href")
             f, ext = os.path.splitext(href)
@@ -2741,7 +2760,7 @@ class InsertExternalHTMLBodyIntoXMLBody:
 
     def _create_new_p_with_imported_html_body(self, a_href, new_href, body):
         a_href.set("href", "#"+new_href)
-        a_href.set("link-type", "internal")
+        a_href.set("lktype", "internal")
         logger.info("Atualiza a[@href]: %s" % etree.tostring(a_href))
 
         body.tag = "CREATENEWPREMOVETAG"
@@ -2776,10 +2795,10 @@ class InsertExternalHTMLBodyIntoXMLBody:
         new_p_items = []
         _new_p_items = {}
         for p in self.p_nodes:
-            for a_href in p.findall(".//a[@link-type='asset']"):
+            for a_href in p.findall(".//a[@lktype='asset']"):
                 _new_p_items[a_href] = p
 
-        for a_href in self.xml.findall(".//a[@link-type='asset']"):
+        for a_href in self.xml.findall(".//a[@lktype='asset']"):
             logger.info("Importar conteúdo de %s" % etree.tostring(a_href))
             href = a_href.get("href")
             f, ext = os.path.splitext(href)
@@ -2798,7 +2817,8 @@ class InsertExternalHTMLBodyIntoXMLBody:
     def _create_new_p_with_asset_data(self, a_href, new_href):
         location = a_href.get("href")
         a_href.set("href", "#"+new_href)
-        a_href.set("link-type", "internal")
+        a_href.set("lktype", "internal")
+        a_href.set("asset", "true")
         logger.info("Atualiza a[@href]: %s" % etree.tostring(a_href))
 
         tag = "img"

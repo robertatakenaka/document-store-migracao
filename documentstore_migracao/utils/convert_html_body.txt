@@ -48,3 +48,6 @@ alg fig
 e disp-formula
 t table-wrap
 f fig
+img fig
+supplementary supplementary-material
+material supplementary-material

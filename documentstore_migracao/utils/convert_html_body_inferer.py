@@ -3,14 +3,28 @@ from documentstore_migracao.utils import files
 
 
 STARTSWITH_RETURNS_TAG_AND_REFTYPE = tuple(
-    [tuple(item.strip().split()) for item in open(config.CONVERSION_TAGS).readlines()]
+    sorted(
+        [tuple(item.strip().split())
+         for item in open(config.CONVERSION_TAGS).readlines()],
+         reverse=True)
 )
+INFERER_ITEMS_BY_PREFIX = {}
+INFERER_ITEMS_BY_TAG = {}
+for prefix, tag in STARTSWITH_RETURNS_TAG_AND_REFTYPE:
+    k = prefix[0]
+    INFERER_ITEMS_BY_PREFIX[k] = INFERER_ITEMS_BY_PREFIX.get(k, [])
+    INFERER_ITEMS_BY_PREFIX[k].append((prefix, tag))
+    INFERER_ITEMS_BY_TAG[tag] = INFERER_ITEMS_BY_TAG.get(tag, [])
+    INFERER_ITEMS_BY_TAG[tag].append((prefix, tag))
+
+for k, v in INFERER_ITEMS_BY_PREFIX.items():
+    INFERER_ITEMS_BY_PREFIX[k] = sorted(v, reverse=True)
 
 
 class Inferer:
 
     REFTYPE = {"table-wrap": "table", "ref": "bibr"}
-    BODY_SECS = ("intr", "meto", "méto", "disc", "bibr", "resu", "abst", "mate", "refe", "ackn", "text")
+    BODY_SECS = ("intr", "subj", "meto", "méto", "disc", "bibr", "resu", "abst", "mate", "refe", "ackn", "text")
 
     def ref_type(self, elem_name):
         return self.REFTYPE.get(elem_name, elem_name)
@@ -18,12 +32,17 @@ class Inferer:
     def tag_and_reftype_from_name(self, name):
         if not name:
             return
-        for prefix, tag in STARTSWITH_RETURNS_TAG_AND_REFTYPE:
-            if name.startswith(prefix):
-                if len(prefix) == 1 and not name[len(prefix) :].isdigit():
-                    return "fn", "fn"
-                return tag, self.ref_type(tag)
-        if not name[0].isalnum():
+        k = name[0]
+        if k.isalpha():
+            for prefix, tag in INFERER_ITEMS_BY_PREFIX.get(k, []):
+                if name.startswith(prefix):
+                    if len(prefix) == 1 and not name[len(prefix):].isdigit():
+                        return "fn", "fn"
+                    return tag, self.ref_type(tag)
+            for prefix, tag in STARTSWITH_RETURNS_TAG_AND_REFTYPE:
+                if prefix in name:
+                    return tag, self.ref_type(tag)
+        if not k.isalnum():
             return "symbol", "fn"
         return "fn", "fn"
 
@@ -35,7 +54,8 @@ class Inferer:
             if c.isalnum():
                 break
         text = a_href_text[i:]
-        for prefix, tag in STARTSWITH_RETURNS_TAG_AND_REFTYPE:
+        k = text[0]
+        for prefix, tag in INFERER_ITEMS_BY_PREFIX.get(k, []):
             if text.startswith(prefix) and len(prefix) > 1:
                 return tag, self.ref_type(tag)
         if a_href_text[0].isalpha():
@@ -54,16 +74,12 @@ class Inferer:
 
     def tag_and_reftype_and_id_from_filepath(self, file_path, elem_name=None):
         filename, __ = files.extract_filename_ext_by_path(file_path)
-
-        prefix_and_tag_items = STARTSWITH_RETURNS_TAG_AND_REFTYPE
         if elem_name:
-            prefix_and_tag_items = [
-                (prefix, tag)
-                for prefix, tag in STARTSWITH_RETURNS_TAG_AND_REFTYPE
-                if tag == elem_name
-            ]
+            prefix_and_tag_items = INFERER_ITEMS_BY_TAG.get(elem_name, [])
             prefix_and_tag_items.append((elem_name[0], elem_name))
-
+        else:
+            k = filename[0]
+            prefix_and_tag_items = INFERER_ITEMS_BY_PREFIX.get(k, [])
         for prefix, tag in prefix_and_tag_items:
             if prefix == filename:
                 return tag, self.ref_type(tag), filename
