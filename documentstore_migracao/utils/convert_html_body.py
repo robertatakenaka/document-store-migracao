@@ -1308,6 +1308,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
     class AddNameAndIdToElementAPipe(CustomPipe):
         """Garante que todos os elemento a[@name] e a[@id] tenham @name e @id"""
+
         def parser_node(self, node):
             _id = node.attrib.get("id")
             _name = node.attrib.get("name")
@@ -1337,6 +1338,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
         deixando apenas *. Também localiza a referência cruzada correspondente,
         por exemplo, ```<a name="tx">*</a>``` para remover também.
         """
+
         def parser_node(self, node):
             href = node.attrib.get("href")
             texts = get_node_text(node)
@@ -1366,6 +1368,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
         disp-formula, fn, app etc
         Nota: este pipe não executa a conversão.
         """
+
         inferer = Inferer()
 
         def _update(self, node, elem_name, ref_type, new_id, text=None):
@@ -1467,7 +1470,12 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     return asset_node
             found = search_asset_node_backwards(img, "xml_tag")
             if found is not None and found.attrib.get("name"):
-                if found.attrib.get("xml_tag") in ["app", "fig", "table-wrap", "disp-formula"]:
+                if found.attrib.get("xml_tag") in [
+                    "app",
+                    "fig",
+                    "table-wrap",
+                    "disp-formula",
+                ]:
                     return found
 
         def _add_xml_attribs_to_img(self, images):
@@ -1505,6 +1513,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
         também das notas para o texto. Este pipe é para remover as
         âncoras e referências cruzadas das notas para o texto.
         """
+
         def _identify_order(self, xml):
             items_by_id = {}
             for a in xml.findall(".//a[@xml_tag]"):
@@ -1532,6 +1541,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
         os valores dos atributos: @xml_tag, @xml_id, @xml_reftype, @xml_label,
         inseridos por DeduceAndSuggestConversionPipe()
         """
+
         def _remove_a(self, a_name, a_href_items):
             _remove_element_or_comment(a_name, True)
             for a_href in a_href_items:
@@ -1699,6 +1709,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
     class CompleteFnConversionPipe(plumber.Pipe):
         """
         """
+
         def _remove_invalid_node(self, node, parent, _next):
             if _next is not None and _next.tag == "xref" and get_node_text(node) == "":
                 _id = node.attrib.get("id")
@@ -1714,9 +1725,11 @@ class ConvertElementsWhichHaveIdPipeline(object):
             parent = node.getparent()
             items = []
             while _next is not None:
-                if (_next.tag == "fn" or
-                    _next.tag == "p" and _next.attrib.get("content-type") != "break"
-                    ):
+                if (
+                    _next.tag == "fn"
+                    or _next.tag == "p"
+                    and _next.attrib.get("content-type") != "break"
+                ):
                     break
                 else:
                     items.append(_next)
@@ -1758,8 +1771,9 @@ class ConvertElementsWhichHaveIdPipeline(object):
                         children[0].tag = "label"
                 elif children[0].tag in ["sup", "bold"]:
                     children_text = get_node_text(children[0])
-                    if len(children_text.split()) <= 3 and \
-                            children_text != get_node_text(node):
+                    if len(
+                        children_text.split()
+                    ) <= 3 and children_text != get_node_text(node):
                         label = etree.Element("label")
                         label_content = deepcopy(children[0])
                         label_content.tail = ""
