@@ -239,6 +239,7 @@ class HTML2SPSPipeline(object):
                 # formado devemos so trocar a tag
                 # e retorna para continuar o Pipe
                 return
+
             node.set("{http://www.w3.org/1999/xlink}href", href)
             node_text = (node.text or "").strip()
             if href == node_text:
@@ -1166,7 +1167,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
         self._ppl = plumber.Pipeline(
             self.SetupPipe(),
             self.RemoveThumbImgPipe(),
-            self.AddNameAndIdToElementAPipe(),
+            self.CompleteElementAWithNameAndIdPipe(),
             self.DeduceAndSuggestConversionPipe(),
             self.RemoveAnchorAndLinksToTextPipe(),
             self.ApplySuggestedConversionPipe(),
@@ -1315,28 +1316,34 @@ class ConvertElementsWhichHaveIdPipeline(object):
             _process(xml, "img", self.parser_node)
             return data
 
-    class AddNameAndIdToElementAPipe(plumber.Pipe):
-        """Garante que todos os elemento a[@name] e a[@id] tenham @name e @id"""
+    class CompleteElementAWithNameAndIdPipe(plumber.Pipe):
+        """Garante que todos os elemento a[@name] e a[@id] tenham @name e @id.
+        Corrige id e name caso contenha caracteres nao alphanum.
+        """
+        def _fix_a_href(self, xml):
+            for a in xml.findall(".//a[@name]"):
+                name = a.attrib.get("name")
+                for a_href in xml.findall(".//a[@href='{}']".format(name)):
+                    a_href.set("href", "#" + name)
 
         def parser_node(self, node):
             _id = node.attrib.get("id")
             _name = node.attrib.get("name")
-            if _id is None or (_name and _id != _name):
-                node.set("id", _name)
-            if _name is None:
-                node.set("name", _id)
+            node.set("id", _name or _id)
+            node.set("name", _name or _id)
             href = node.attrib.get("href")
-            if href:
-                if href[0] == "#":
-                    a = etree.Element("a")
-                    a.set("name", node.attrib.get("name"))
-                    a.set("id", node.attrib.get("id"))
-                    node.addprevious(a)
-                    node.attrib.pop("id")
-                    node.attrib.pop("name")
+            if href and href[0] == "#":
+                a = etree.Element("a")
+                a.set("name", node.attrib.get("name"))
+                a.set("id", node.attrib.get("id"))
+                node.addprevious(a)
+                node.set("href", "#" + href[1:])
+                node.attrib.pop("id")
+                node.attrib.pop("name")
 
         def transform(self, data):
             raw, xml = data
+            self._fix_a_href(xml)
             _process(xml, "a[@id]", self.parser_node)
             _process(xml, "a[@name]", self.parser_node)
             return data
