@@ -118,7 +118,6 @@ class HTML2SPSPipeline(object):
             self.ConvertRemote2LocalPipe(),
             self.DeprecatedHTMLTagsPipe(),
             self.RemoveImgSetaPipe(),
-            self.RemoveDuplicatedIdPipe(),
             self.RemoveExcedingStyleTagsPipe(),
             self.RemoveEmptyPipe(),
             self.RemoveStyleAttributesPipe(),
@@ -147,7 +146,6 @@ class HTML2SPSPipeline(object):
             self.GraphicChildrenPipe(),
             self.FixBodyChildrenPipe(),
             self.RemovePWhichIsParentOfPPipe(),
-            self.RemoveRefIdPipe(),
             self.FixIdAndRidPipe(super_obj=self),
             self.SanitizationPipe(),
         )
@@ -284,21 +282,6 @@ class HTML2SPSPipeline(object):
                 nodes = xml.findall(".//" + tag)
                 if len(nodes) > 0:
                     etree.strip_tags(xml, tag)
-            return data
-
-    class RemoveDuplicatedIdPipe(plumber.Pipe):
-        def transform(self, data):
-            raw, xml = data
-
-            nodes = xml.findall(".//*[@id]")
-            root = xml.getroottree()
-            for node in nodes:
-                attr = node.attrib
-                d_ids = root.findall(".//*[@id='%s']" % attr["id"])
-                if len(d_ids) > 1:
-                    for index, d_n in enumerate(d_ids[1:]):
-                        d_n.set("id", "%s-duplicate-%s" % (attr["id"], index))
-
             return data
 
     class RemoveExcedingStyleTagsPipe(plumber.Pipe):
@@ -993,16 +976,6 @@ class HTML2SPSPipeline(object):
             etree.strip_tags(xml, "REMOVE_P")
             return data
 
-    class RemoveRefIdPipe(plumber.Pipe):
-        def parser_node(self, node):
-            node.attrib.pop("xref_id", None)
-
-        def transform(self, data):
-            raw, xml = data
-
-            _process(xml, "*[@xref_id]", self.parser_node)
-            return data
-
     class SanitizationPipe(plumber.Pipe):
         def transform(self, data):
             raw, xml = data
@@ -1087,7 +1060,6 @@ class DataSanitizationPipeline(object):
             self.GraphicInExtLink(),
             self.TableinBody(),
             self.TableinP(),
-            self.AddPinFN(),
             self.WrapNodeInDefItem(),
         )
 
@@ -1131,17 +1103,6 @@ class DataSanitizationPipeline(object):
             raw, xml = data
 
             _process(xml, "p[table]", self.parser_node)
-            return data
-
-    class AddPinFN(plumber.Pipe):
-        def parser_node(self, node):
-            if node.text:
-                wrap_content_node(node, "p")
-
-        def transform(self, data):
-            raw, xml = data
-
-            _process(xml, "fn", self.parser_node)
             return data
 
     class WrapNodeInDefItem(plumber.Pipe):
@@ -1346,30 +1307,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self._fix_a_href(xml)
             _process(xml, "a[@id]", self.parser_node)
             _process(xml, "a[@name]", self.parser_node)
-            return data
-
-    class RemoveInternalLinksToTextIdentifiedByAsteriskPipe(plumber.Pipe):
-        """
-        Ao encontrar ```<a href="#tx">*</a>```, remove a tag e atributos,
-        deixando apenas *. Também localiza a referência cruzada correspondente,
-        por exemplo, ```<a name="tx">*</a>``` para remover também.
-        """
-
-        def parser_node(self, node):
-            href = node.attrib.get("href")
-            texts = get_node_text(node)
-            if href.startswith("#") and texts and texts[0] == "*":
-                previous = node.getprevious()
-                if previous is not None and previous.tag == "a":
-                    root = node.getroottree()
-                    related = root.find(".//*[@name='{}']".format(href[1:]))
-                    if related is not None:
-                        _remove_element_or_comment(related)
-                    _remove_element_or_comment(node)
-
-        def transform(self, data):
-            raw, xml = data
-            _process(xml, "a[@href]", self.parser_node)
             return data
 
     class DeduceAndSuggestConversionPipe(plumber.Pipe):
