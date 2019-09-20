@@ -1134,8 +1134,9 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.DeduceAndSuggestConversionPipe(),
             self.RemoveAnchorAndLinksToTextPipe(),
             self.ApplySuggestedConversionPipe(),
-            self.AddAssetInfoToTablePipe(),
-            self.CreateAssetElementsFromImgOrTableElementsPipe(),
+            self.AssetElementAddContentPipe(),
+            self.AssetElementIdentifyLabelAndCaptionPipe(),
+            self.AssetElementFixContent(),
             self.ImgPipe(),
             self.CompleteFnConversionPipe(),
         )
@@ -1148,118 +1149,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
         def transform(self, data):
             new_obj = deepcopy(data)
             return data, new_obj
-
-    class AddAssetInfoToTablePipe(plumber.Pipe):
-        def parser_node(self, node):
-            _id = node.attrib.get("id")
-            if _id:
-                new_id = _id
-                node.set("id", new_id)
-                node.set("xml_id", new_id)
-                node.set("xml_tag", "table-wrap")
-                node.set("xml_label", "Tab")
-
-        def transform(self, data):
-            raw, xml = data
-            _process(xml, "table[@id]", self.parser_node)
-            return data
-
-    class CreateAssetElementsFromImgOrTableElementsPipe(plumber.Pipe):
-        def _find_label_and_caption_in_node(self, node, previous_or_next):
-            node_text = node.attrib.get("xml_label")
-            if node_text is None:
-                return
-            text = get_node_text(previous_or_next)
-            if text.lower().startswith(node_text.lower()):
-                _node = previous_or_next
-                parts = text.split()
-                if len(parts) > 0:
-                    if len(parts) == 1:
-                        text = parts[0], ""
-                    elif parts[1].isalnum():
-                        text = parts[:2], parts[2:]
-                    elif parts[1][:-1].isalnum():
-                        text = (parts[0], parts[1][:-1]), parts[2:]
-                    else:
-                        text = parts[:1], parts[1:]
-                    if len(text) == 2:
-                        label = etree.Element("label")
-                        label.text = join_texts(text[0])
-                        title_text = join_texts(text[1])
-                        caption = None
-
-                        if title_text:
-                            caption = etree.Element("caption")
-                            title = etree.Element("title")
-                            title.text = join_texts(text[1])
-                            caption.append(title)
-                        return _node, label, caption
-
-        def _find_label_and_caption_around_node(self, node):
-            parent = node.getparent()
-            _node = None
-            label = None
-            caption = None
-            node_label_caption = None
-
-            previous = parent.getprevious()
-            _next = parent.getnext()
-
-            if previous is not None:
-                node_label_caption = self._find_label_and_caption_in_node(
-                    node, previous
-                )
-
-            if node_label_caption is None and _next is not None:
-                node_label_caption = self._find_label_and_caption_in_node(node, _next)
-
-            if node_label_caption is not None:
-                _node, label, caption = node_label_caption
-                parent = _node.getparent()
-                if parent is not None:
-                    parent.remove(_node)
-                return label, caption
-
-        def _get_asset_node(self, img_or_table, xml_new_tag, xml_id):
-            asset = find_or_create_asset_node(
-                img_or_table.getroottree(), xml_new_tag, xml_id, img_or_table
-            )
-            if asset is not None:
-                parent = asset.getparent()
-                if parent is None:
-                    parent = img_or_table.getparent()
-                    if parent.tag != "body":
-                        parent.addprevious(asset)
-                    else:
-                        parent.append(asset)
-            return asset
-
-        def parser_node(self, img_or_table):
-            xml_id = img_or_table.attrib.get("xml_id")
-            xml_reftype = img_or_table.attrib.get("xml_reftype")
-            xml_new_tag = img_or_table.attrib.get("xml_tag")
-            xml_label = img_or_table.attrib.get("xml_label")
-            if not xml_new_tag or not xml_id:
-                return
-            img_or_table_parent = img_or_table.getparent()
-            label_and_caption = self._find_label_and_caption_around_node(img_or_table)
-            asset = self._get_asset_node(img_or_table, xml_new_tag, xml_id)
-            if label_and_caption:
-                if label_and_caption[1] is not None:
-                    asset.insert(0, label_and_caption[1])
-                asset.insert(0, label_and_caption[0])
-            new_img_or_table = deepcopy(img_or_table)
-            img_or_table_parent.remove(img_or_table)
-            for attr in ["xml_id", "xml_reftype", "xml_label", "xml_tag"]:
-                if attr in new_img_or_table.attrib.keys():
-                    new_img_or_table.attrib.pop(attr)
-            asset.append(new_img_or_table)
-
-        def transform(self, data):
-            raw, xml = data
-            _process(xml, "img[@xml_id]", self.parser_node)
-            _process(xml, "table[@xml_id]", self.parser_node)
-            return data
 
     class RemoveThumbImgPipe(plumber.Pipe):
         def parser_node(self, node):
@@ -1878,6 +1767,217 @@ class ConvertElementsWhichHaveIdPipeline(object):
             for fn in xml.findall(".//fn"):
                 self.update(fn)
                 items.append(etree.tostring(fn))
+            return data
+
+    class AssetElementAddContentPipe(plumber.Pipe):
+        def _find_xml_text_in_node(self, xml_text, node_text):
+            if "." in xml_text:
+                xml_text_parts = xml_text.replace(".", "")
+                if len(xml_text_parts) > 1:
+                    start, number = xml_text_parts[:2]
+                    parts = node_text.split()
+                    if parts[0].startswith(start.capitalize()) and parts[1].startswith(number):
+                        return True
+            elif xml_text.lower().startswith(node_text.lower()):
+                return True
+
+        def _find_label_and_content(self, asset_node):
+            children = []
+            _next = asset_node
+            label = asset_node.find(".//label")
+            img = asset_node.find(".//img")
+            table = asset_node.find(".//table")
+            max_times = 5
+            for item in [label, img, table]:
+                if item is not None:
+                    max_times -= 1
+            if asset_node.tail:
+                asset_node.text = asset_node.tail
+                asset_node.tail = ""
+            i = 0
+            while True:
+
+                _next = _next.getnext()
+                if label is not None and (img is not None or table is not None):
+                    break
+                if i > max_times:
+                    break
+                if _next is None:
+                    break
+                if (_next.find(".//fig") is not None or
+                    _next.find(".//table-wrap") is not None or
+                    _next.find(".//app") is not None):
+                    break
+                if _next.tag in ["fig", "table-wrap", "app"]:
+                    break
+                if _next.tag == "img" or _next.findall(".//img"):
+                    img = _next
+                    img.set("content-type", "img")
+                elif _next.tag == "table" or _next.findall(".//table"):
+                    table = _next
+                    table.set("content-type", "table")
+                elif _next.tag == "bold" and _next.get("label-of") or _next.findall(".//bold[@label-of]"):
+                    label = _next
+                    label.set("content-type", "label")
+                else:
+                    xml_text = asset_node.get("xml_text")
+                    text = get_node_inner_text(_next)
+
+                    if xml_text and text:
+                        if self._find_xml_text_in_node(xml_text, text):
+                            label = _next
+                            label.set("content-type", "label")
+
+                i += 1
+                children.append(_next)
+            return children, label, img, table
+
+        def add_content_to_asset_node(self, asset_node):
+            asset_node.set("fix", "asset")
+            children, label, img, table = self._find_label_and_content(asset_node)
+            found = [item for item in [label, img, table] if item is not None]
+            p = asset_node.getparent()
+
+            if label is not None and (img is not None or table is not None):
+                for child in children:
+                    asset_node.append(deepcopy(child))
+                    p.remove(child)
+            elif img is not None:
+                for child in children:
+                    if asset_node.find(".//img") is not None:
+                        break
+                    asset_node.append(deepcopy(child))
+                    p.remove(child)
+            elif table is not None:
+                for child in children:
+                    if asset_node.find(".//table") is not None:
+                        break
+                    asset_node.append(deepcopy(child))
+                    p.remove(child)
+
+        def transform(self, data):
+            raw, xml = data
+            logger.info("AssetElementAddContentPipe - fig")
+            for asset_node in xml.findall(".//fig"):
+                self.add_content_to_asset_node(asset_node)
+            logger.info("AssetElementAddContentPipe - table-wrap")
+            for asset_node in xml.findall(".//table-wrap"):
+                self.add_content_to_asset_node(asset_node)
+            logger.info("AssetElementAddContentPipe - app")
+            for asset_node in xml.findall(".//app"):
+                self.add_content_to_asset_node(asset_node)
+            return data
+
+    class AssetElementIdentifyLabelAndCaptionPipe(plumber.Pipe):
+        def _identify_label_and_caption_from_bold(self, bold):
+            bold.attrib.clear()
+            label = etree.Element("label")
+            bold.addnext(label)
+            label.append(deepcopy(bold))
+            p = bold.getparent()
+            p.remove(bold)
+            caption = etree.Element("caption")
+            title = etree.Element("title")
+            caption.append(title)
+            label.addnext(caption)
+            _next = caption
+            title.text = caption.tail
+            caption.tail = ""
+            p = caption.getparent()
+            removed = []
+            while True:
+                _next = _next.getnext()
+                if _next is None:
+                    break
+                title.append(deepcopy(_next))
+                removed.append(_next)
+            for item in removed:
+                p.remove(item)
+
+        def identify_label_and_caption(self, asset_node):
+            label_parent = asset_node.find(".//*[@content-type='label']")
+            search_expr = asset_node.get("xml_text")
+            if not search_expr[0].isalpha():
+                search_expr = asset_node.get("xml_tag")
+            if label_parent is None:
+                for node in asset_node.findall("*"):
+                    label_text = get_node_inner_text(node).lower()
+                    if label_text.startswith(search_expr):
+                        node.set("content-type", "label")
+                        label_parent = node
+                        break
+                for node in asset_node.findall(".//*"):
+                    if (node.text or "").lower().startswith(search_expr):
+                        if node.tag == "bold":
+                            node.set("label-of", asset_node.get("id"))
+                        break
+
+            if label_parent is not None:
+                bold = label_parent.find(".//bold[@label-of]")
+                if bold is not None:
+                    self._identify_label_and_caption_from_bold(bold)
+                else:
+                    self._guess_label_and_caption(asset_node, label_parent)
+
+        def _guess_label_and_caption(self, asset_node, label_parent):
+            # FIXME
+            found = None
+            for node in label_parent.findall(".//*"):
+                text = node.text
+                if text and text.lower().startswith(asset_node.get("xml_text")):
+                    found = node
+                    break
+            if found is None:
+                for node in label_parent.findall(".//*"):
+                    text = node.text
+                    if text and text.lower().startswith(asset_node.get("xml_text")[:3]):
+                        found = node
+                        break
+            if found is not None:
+                xml_text_words = asset_node.get("xml_text").split(" ")
+                found_text_words = (found.text or "").split(" ")
+                if len(xml_text_words) <= len(found_text_words):
+                    label = etree.Element("label")
+                    found.addprevious(label)
+                    label.text = " ".join(
+                        [w for w in found_text_words[:len(xml_text_words)]])
+                    caption = etree.Element("caption")
+                    title = etree.Element("title")
+                    caption.append(title)
+                    label.addnext(caption)
+                    title.text = found.text.replace(label.text, "")
+                    for child in found.getchildren():
+                        title.append(deepcopy(child))
+                    p = found.getparent()
+                    p.remove(found)
+
+        def transform(self, data):
+            raw, xml = data
+            logger.info("AssetElementIdentifyLabelAndCaptionPipe")
+            for asset_node in xml.findall(".//*[@fix='asset']"):
+                self.identify_label_and_caption(asset_node)
+                id = asset_node.get("id")
+                asset_node.attrib.clear()
+                asset_node.set("id", id)
+            return data
+
+    class AssetElementFixContent(plumber.Pipe):
+        def transform(self, data):
+            raw, xml = data
+            logger.info("AssetElementFixContent")
+            for tag in ["fig", "table-wrap", "app"]:
+                for node in xml.findall(".//{}".format(tag)):
+                    xref = node.find("xref")
+                    if xref is not None:
+                        xref.tag = "REMOVEPFIXASSETCONTENT"
+                    label_of = node.find(".//*[@label-of]")
+
+                    if label_of is not None:
+                        label_of.attrib.clear()
+                    for p in node.findall("p"):
+                        p.tag = "REMOVEPFIXASSETCONTENT"
+
+            etree.strip_tags(xml, "REMOVEPFIXASSETCONTENT")
             return data
 
 
