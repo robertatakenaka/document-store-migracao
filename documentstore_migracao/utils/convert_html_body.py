@@ -1130,7 +1130,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.RemoveThumbImgPipe(),
             self.CompleteElementAWithNameAndIdPipe(),
             self.CompleteElementAWithXMLTextPipe(),
-            self.EvaluateElementAPipe(),
+            self.EvaluateElementAToDeleteOrMarkAsFnLabelPipe(),
             self.DeduceAndSuggestConversionPipe(),
             self.RemoveAnchorAndLinksToTextPipe(),
             self.ApplySuggestedConversionPipe(),
@@ -1352,7 +1352,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.add_xml_text_to_other_a(xml)
             return data
 
-    class EvaluateElementAPipe(plumber.Pipe):
+    class EvaluateElementAToDeleteOrMarkAsFnLabelPipe(plumber.Pipe):
         """
         No texto há âncoras (a[@name]) e referencias cruzada (a[@href]):
         TEXTO->NOTAS e NOTAS->TEXTO.
@@ -1365,13 +1365,13 @@ class ConvertElementsWhichHaveIdPipeline(object):
             for a in xml.findall(".//a"):
                 _id = a.attrib.get("name") or a.attrib.get("href")
                 if _id and _id.startswith("#"):
-                    _id = href[1:]
+                    _id = _id[1:]
                 if _id:
                     items_by_id[_id] = items_by_id.get(_id, [])
                     items_by_id[_id].append(a)
             return items_by_id
 
-        def _exclude_repeated_a_names(self, items):
+        def _keep_only_one_a_name(self, items):
             # remove os a[@name] repetidos, se aplicável
             a_names = [n for n in items if n.attrib.get("name")]
             for n in a_names[1:]:
@@ -1382,48 +1382,50 @@ class ConvertElementsWhichHaveIdPipeline(object):
         def _exclude_invalid_a_name_and_identify_fn_label(self, items):
             if items[0].get("name"):
                 items[0].tag = "_EXCLUDE_REMOVETAG"
-                root = None
+                root = items[0].getroottree()
                 for a_href in items[1:]:
-                    # continuar aqui
                     found = None
-                    if a_href.get("href"):
-                        found = self._find_a_name(
-                            a_href, root
-                        )
+                    if self._might_be_fn_label(a_href):
+                        found = self._find_a_name_which_same_xml_text(
+                            root, a_href.get("xml_text"))
                     if found is None:
                         logger.info("remove: %s" % etree.tostring(a_href))
                         _remove_element_or_comment(a_href)
                     else:
-                        logger.info("Identifica candidato a fn/label")
+                        logger.info("Identifica como fn/label")
                         logger.info(etree.tostring(a_href))
                         a_href.tag = "label"
                         a_href.set("label-of", found.get("name"))
                         logger.info(etree.tostring(a_href))
-                parent = nodes[0].getparent()
-                etree.strip_tags(parent, "_EXCLUDE_REMOVETAG")
 
         def _exclude_invalid_unique_a_href(self, nodes):
             if len(nodes) == 1 and nodes[0].attrib.get("href"):
                 _remove_element_or_comment(nodes[0])
 
-        def _find_a_name(self, a_href, root):
+        def _might_be_fn_label(self, a_href):
             xml_text = a_href.get("xml_text")
             if xml_text and get_node_text(a_href):
-                root = root or a_href.getroottree()
-                for item in root.findall(".//a[@xml_text='{}']".format(xml_text)):
-                    if item.get("name"):
-                        return item
+                return any(
+                    xml_text[0].isdigit(),
+                    not xml_text[0].isalnum(),
+                    xml_text[0].isalpha() and len(xml_text) == 1,
+                )
+
+        def _find_a_name_which_same_xml_text(self, root, xml_text):
+            for item in root.findall(".//a[@xml_text='{}']".format(xml_text)):
+                if item.get("name"):
+                    return item
 
         def transform(self, data):
             raw, xml = data
-            logger.info("EvaluateElementAPipe")
+            logger.info("EvaluateElementAToDeleteOrCreateFnLabelPipe")
             items_by_id = self._classify_elem_a_by_id(xml)
             for _id, items in items_by_id.items():
-                self._exclude_repeated_a_names(items)
+                self._keep_only_one_a_name(items)
                 self._exclude_invalid_a_name_and_identify_fn_label(items)
                 self._exclude_invalid_unique_a_href(items)
             etree.strip_tags(xml, "_EXCLUDE_REMOVETAG")
-            logger.info("EvaluateElementAPipe - fim")
+            logger.info("EvaluateElementAToDeleteOrCreateFnLabelPipe - fim")
             return data
 
     class DeduceAndSuggestConversionPipe(plumber.Pipe):
