@@ -1441,6 +1441,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
         Identifica que alguns textos em bold podem ser label de algum elemento
         por exemplo <bold>Figure 1</bold>
         """
+
         def transform(self, data):
             logger.info("MarkBoldAsAssetLabelPipe")
             raw, xml = data
@@ -1461,7 +1462,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             return data
 
     class DeduceAndSuggestConversionPipe(plumber.Pipe):
-        """Este pipe analisa os dados doss elementos a[@href] e a[@name],
+        """Este pipe analisa os dados dos elementos a[@href] e a[@name],
         deduz e sugere tag, id, ref-type para a conversão de elementos,
         adicionando aos elementos a, os atributos: @xml_tag, @xml_id,
         @xml_reftype, @xml_label.
@@ -1482,9 +1483,17 @@ class ConvertElementsWhichHaveIdPipeline(object):
             if text:
                 node.set("xml_label", text)
 
-        def _add_xml_attribs_to_a_href_from_text(self, texts):
-            for text, data in texts.items():
-                nodes_with_id, nodes_without_id = data
+        def _deduce_from_a_href_text(self, texts):
+            """
+            De acordo com o a[@xml_text] e/ou a.text,
+            adiciona no elemento a, atributos:
+            xml_tag
+            xml_id
+            xml_reftype
+            xml_label
+            """
+            for text, nodes in texts.items():
+                nodes_with_id, nodes_without_id = nodes
                 tag_reftype = self.inferer.tag_and_reftype_from_a_href_text(text)
                 if not tag_reftype:
                     continue
@@ -1519,13 +1528,22 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     node.attrib.get("xml_reftype"),
                     node.attrib.get("xml_id"),
                 ]
+                data = [item if item != "to-define" else None for item in data]
                 if all(data):
                     complete = data
                 else:
                     incomplete.append(node)
             return complete, incomplete
 
-        def _add_xml_attribs_to_a_href_from_file_paths(self, file_paths):
+        def _deduce_from_file_paths(self, file_paths):
+            """
+            De acordo com o a[@href] cujo conteúdo é nome de arquivo,
+            adiciona no elemento a, atributos:
+            xml_tag
+            xml_id
+            xml_reftype
+            xml_label
+            """
             for path, nodes in file_paths.items():
                 new_id = None
                 complete, incomplete = self._classify_nodes(nodes)
@@ -1543,7 +1561,36 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     for node in incomplete:
                         self._update(node, tag, reftype, new_id, text)
 
-        def _add_xml_attribs_to_a_name(self, a_names):
+        def a_name_data_to_add_xml_attribs(self, a_name):
+            children = a_name.getchildren()
+            if children:
+                next_texts = [a_name.text]
+                _next = children[0]
+            else:
+                next_texts = [a_name.tail]
+                _next = a_name
+            img = _next.tag == "img"
+            for i in range(0, 2):
+                _next = _next.getnext()
+                if _next is None:
+                    break
+                if _next.tag == "img" or _next.find(".//img") is not None:
+                    img = img and True
+                next_texts.append(get_node_inner_text(_next))
+            for next_text in next_texts:
+                if next_text:
+                    break
+            return next_text, img
+
+        def _deduce_from_a_name(self, a_names):
+            """
+            De acordo com o a[@name],
+            adiciona no elemento a, atributos:
+            xml_tag
+            xml_id
+            xml_reftype
+            xml_label
+            """
             for name, a_name_and_hrefs in a_names.items():
                 new_id = None
                 a_name, a_hrefs = a_name_and_hrefs
@@ -1551,11 +1598,18 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 if complete:
                     text, tag, reftype, new_id = complete
                 else:
-                    tag_reftype = self.inferer.tag_and_reftype_from_a_href_text(
-                        a_name.tail
-                    )
+                    tag_reftype = None
+                    next_text, img = self.a_name_data_to_add_xml_attribs(a_name)
+                    if next_text:
+                        tag_reftype = self.inferer.tag_and_reftype_from_a_href_text(
+                            next_text
+                        )
+
                     if not tag_reftype:
                         tag_reftype = self.inferer.tag_and_reftype_from_name(name)
+
+                    if not tag_reftype and img:
+                        tag_reftype = "fig", "fig"
                     if tag_reftype:
                         tag, reftype = tag_reftype
                         new_id = name
@@ -1580,7 +1634,15 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 ]:
                     return found
 
-        def _add_xml_attribs_to_img(self, images):
+        def _deduce_from_img(self, images):
+            """
+            De acordo com o img[@src],
+            adiciona no elemento a, atributos:
+            xml_tag
+            xml_id
+            xml_reftype
+            xml_label
+            """
             for path, images in images.items():
                 text, new_id, tag, reftype = None, None, None, None
                 tag_reftype_id = self.inferer.tag_and_reftype_and_id_from_filepath(path)
@@ -1601,12 +1663,12 @@ class ConvertElementsWhichHaveIdPipeline(object):
             raw, xml = data
             document = Document(xml)
             texts, file_paths = document.a_href_items
+            self._deduce_from_a_href_text(texts)
+            self._deduce_from_file_paths(file_paths)
             names = document.a_names
+            self._deduce_from_a_name(names)
             images = document.images
-            self._add_xml_attribs_to_a_href_from_text(texts)
-            self._add_xml_attribs_to_a_name(names)
-            self._add_xml_attribs_to_a_href_from_file_paths(file_paths)
-            self._add_xml_attribs_to_img(images)
+            self._deduce_from_img(images)
             return data
 
     class RemoveAnchorAndLinksToTextPipe(plumber.Pipe):
