@@ -1137,7 +1137,10 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.AssetElementIdentifyLabelAndCaptionPipe(),
             self.AssetElementFixContent(),
             self.ImgPipe(),
-            self.CompleteFnConversionPipe(),
+            self.MoveFnPipe(),
+            self.FootnoteAddContentPipe(),
+            self.IdentifyFnLabelAndPPipe(),
+            self.FixFnContent(),
         )
 
     def deploy(self, raw):
@@ -1618,7 +1621,65 @@ class ConvertElementsWhichHaveIdPipeline(object):
             _process(xml, "img", self.parser_node)
             return data
 
-    class CompleteFnConversionPipe(plumber.Pipe):
+
+    class MoveFnPipe(plumber.Pipe):
+        def transform(self, data):
+            raw, xml = data
+            self._move_fn_out_of_style_tags(xml)
+            self._remove_p_if_fn_is_only_child(xml)
+            return data
+
+        def _move_fn_out_of_style_tags(self, xml):
+            changed = True
+            while changed:
+                changed = False
+                for tag in ["sup", "bold", "italic"]:
+                    self._identify_fn_to_move_out(xml, tag)
+                    ret = self._move_fn_out(xml)
+                    if ret:
+                        changed = True
+
+        def _remove_p_if_fn_is_only_child(self, xml):
+            for p in xml.findall(".//p[fn]"):
+                if len(p.findall(".//*")) == 1 and not get_node_inner_text(p):
+                    p.tag = "REMOVEPIFFNISONLYCHLDREMOVETAG"
+            etree.strip_tags(xml, "REMOVEPIFFNISONLYCHLDREMOVETAG")
+
+        def _identify_fn_to_move_out(self, xml, style_tag):
+            for node in xml.findall(".//{}[fn]".format(style_tag)):
+                text = (node.text or "").strip()
+                children = node.getchildren()
+                if children[0].tag == "fn" and not text:
+                    node.set("move", "backward")
+                elif children[-1].tag == "fn" and not (children[-1].tail or "").strip():
+                    node.set("move", "forward")
+
+        def _move_fn_out(self, xml):
+            changed = False
+            for node in xml.findall(".//*[@move]"):
+                move = node.attrib.pop("move")
+                if move == "backward":
+                    self._move_fn_out_and_backward(node)
+                elif move == "forward":
+                    self._move_fn_out_and_forward(node)
+                changed = True
+            return changed
+
+        def _move_fn_out_and_backward(self, node):
+            fn = node.find("fn")
+            fn_copy = deepcopy(fn)
+            fn_copy.tail = ""
+            node.addprevious(fn_copy)
+            node.text = fn.tail
+            node.remove(fn)
+
+        def _move_fn_out_and_forward(self, node):
+            fn = node.getchildren()[-1]
+            fn_copy = deepcopy(fn)
+            node.addnext(fn_copy)
+            node.remove(fn)
+            
+    class FootnoteAddContentPipe(plumber.Pipe):
         """
         """
 
