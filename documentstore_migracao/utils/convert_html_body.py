@@ -1132,7 +1132,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.CompleteElementAWithXMLTextPipe(),
             self.EvaluateElementAToDeleteOrMarkAsFnLabelPipe(),
             self.DeduceAndSuggestConversionPipe(),
-            self.RemoveAnchorAndLinksToTextPipe(),
             self.ApplySuggestedConversionPipe(),
             self.AssetElementAddContentPipe(),
             self.AssetElementIdentifyLabelAndCaptionPipe(),
@@ -1558,34 +1557,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self._deduce_from_a_name(names)
             images = document.images
             self._deduce_from_img(images)
-            return data
-
-    class RemoveAnchorAndLinksToTextPipe(plumber.Pipe):
-        """
-        No texto há ancoras e referencias cruzada do texto para as notas e
-        também das notas para o texto. Este pipe é para remover as
-        âncoras e referências cruzadas das notas para o texto.
-        """
-
-        def _identify_order(self, xml):
-            items_by_id = {}
-            for a in xml.findall(".//a[@xml_tag]"):
-                if a.attrib.get("xml_tag") == "fn":
-                    _id = a.attrib.get("xml_id")
-                    items_by_id[_id] = items_by_id.get(_id, [])
-                    items_by_id[_id].append(a)
-            return items_by_id
-
-        def _exclude(self, items_by_id):
-            for _id, nodes in items_by_id.items():
-                if len(nodes) >= 2 and nodes[0].attrib.get("name"):
-                    for n in nodes:
-                        _remove_element_or_comment(n)
-
-        def transform(self, data):
-            raw, xml = data
-            items_by_id = self._identify_order(xml)
-            self._exclude(items_by_id)
             return data
 
     class ApplySuggestedConversionPipe(plumber.Pipe):
