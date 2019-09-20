@@ -1283,6 +1283,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
         """Garante que todos os elemento a[@name] e a[@id] tenham @name e @id.
         Corrige id e name caso contenha caracteres nao alphanum.
         """
+
         def _fix_a_href(self, xml):
             for a in xml.findall(".//a[@name]"):
                 name = a.attrib.get("name")
@@ -1317,6 +1318,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
         Por exemplo, identificar se <a href="#2">2</a> é nota de rodapé ou
         é Fig 2.
         """
+
         def add_xml_text_to_a_href(self, xml):
             previous = etree.Element("none")
             for i, node in enumerate(xml.findall(".//a[@href]")):
@@ -1329,8 +1331,12 @@ class ConvertElementsWhichHaveIdPipeline(object):
                         label, number = xml_text.split(" ")
                         if number[0] <= text[0]:
                             node.set("xml_text", label + " " + text)
-                            logger.info("add_xml_text_to_a_href: %s " % etree.tostring(previous))
-                            logger.info("add_xml_text_to_a_href: %s " % etree.tostring(node))
+                            logger.info(
+                                "add_xml_text_to_a_href: %s " % etree.tostring(previous)
+                            )
+                            logger.info(
+                                "add_xml_text_to_a_href: %s " % etree.tostring(node)
+                            )
                 previous = node
 
         def add_xml_text_to_other_a(self, xml):
@@ -1360,6 +1366,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
         Também remover duplicidade de a[@name]
         Algumas NOTAS->TEXTO podem ser convertidas a "fn/label"
         """
+
         def _classify_elem_a_by_id(self, xml):
             items_by_id = {}
             for a in xml.findall(".//a"):
@@ -1387,7 +1394,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     found = None
                     if self._might_be_fn_label(a_href):
                         found = self._find_a_name_which_same_xml_text(
-                            root, a_href.get("xml_text"))
+                            root, a_href.get("xml_text")
+                        )
                     if found is None:
                         logger.info("remove: %s" % etree.tostring(a_href))
                         _remove_element_or_comment(a_href)
@@ -1426,6 +1434,30 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 self._exclude_invalid_unique_a_href(items)
             etree.strip_tags(xml, "_EXCLUDE_REMOVETAG")
             logger.info("EvaluateElementAToDeleteOrCreateFnLabelPipe - fim")
+            return data
+
+    class MarkBoldAsAssetLabelPipe(plumber.Pipe):
+        """
+        Identifica que alguns textos em bold podem ser label de algum elemento
+        por exemplo <bold>Figure 1</bold>
+        """
+        def transform(self, data):
+            logger.info("MarkBoldAsAssetLabelPipe")
+            raw, xml = data
+            for bold in xml.findall(".//bold"):
+                logger.info("MarkBoldAsAssetLabelPipe: %s" % etree.tostring(bold))
+                bold_text = bold.text
+                if bold_text:
+                    bold_text = bold_text.lower()
+                    for node in xml.findall(".//a[@xml_text='{}']".format(bold_text)):
+                        href = node.get("href")
+                        if href[0] == "#":
+                            bold.set("label-of", href[1:])
+                            logger.info(
+                                "MarkBoldAsAssetLabelPipe: %s" % etree.tostring(bold)
+                            )
+                            break
+            logger.info("MarkBoldAsAssetLabelPipe - fim")
             return data
 
     class DeduceAndSuggestConversionPipe(plumber.Pipe):
