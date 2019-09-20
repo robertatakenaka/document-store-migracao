@@ -1215,7 +1215,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 node.set("xml_text", text)
                 if text[0].isdigit():
                     xml_text = previous.get("xml_text")
-                    if " " in xml_text:
+                    if xml_text and " " in xml_text:
                         label, number = xml_text.split(" ")
                         if number[0] <= text[0]:
                             node.set("xml_text", label + " " + text)
@@ -1302,9 +1302,10 @@ class ConvertElementsWhichHaveIdPipeline(object):
             xml_text = a_href.get("xml_text")
             if xml_text and get_node_text(a_href):
                 return any(
-                    xml_text[0].isdigit(),
+                    [xml_text[0].isdigit(),
                     not xml_text[0].isalnum(),
                     xml_text[0].isalpha() and len(xml_text) == 1,
+                    ]
                 )
 
         def _find_a_name_which_same_xml_text(self, root, xml_text):
@@ -1868,6 +1869,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
         def identify_label_and_caption(self, asset_node):
             label_parent = asset_node.find(".//*[@content-type='label']")
             search_expr = asset_node.get("xml_text")
+            if search_expr is None:
+                return
             if not search_expr[0].isalpha():
                 search_expr = asset_node.get("xml_tag")
             if label_parent is None:
