@@ -1129,6 +1129,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.SetupPipe(),
             self.RemoveThumbImgPipe(),
             self.CompleteElementAWithNameAndIdPipe(),
+            self.CompleteElementAWithXMLText(),
             self.DeduceAndSuggestConversionPipe(),
             self.RemoveAnchorAndLinksToTextPipe(),
             self.ApplySuggestedConversionPipe(),
@@ -1307,6 +1308,47 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self._fix_a_href(xml)
             _process(xml, "a[@id]", self.parser_node)
             _process(xml, "a[@name]", self.parser_node)
+            return data
+
+    class CompleteElementAWithXMLText(plumber.Pipe):
+        """
+        Adiciona o atributo @xml_text ao elemento a, com o valor de seu rótulo.
+        Por exemplo, identificar se <a href="#2">2</a> é nota de rodapé ou
+        é Fig 2.
+        """
+        def add_xml_text_to_a_href(self, xml):
+            previous = etree.Element("none")
+            for i, node in enumerate(xml.findall(".//a[@href]")):
+                href = node.get("href")
+                text = get_node_text(node).lower()
+                node.set("xml_text", text)
+                if text[0].isdigit():
+                    xml_text = previous.get("xml_text")
+                    if " " in xml_text:
+                        label, number = xml_text.split(" ")
+                        if number[0] <= text[0]:
+                            node.set("xml_text", label + " " + text)
+                            logger.info("add_xml_text_to_a_href: %s " % etree.tostring(previous))
+                            logger.info("add_xml_text_to_a_href: %s " % etree.tostring(node))
+                previous = node
+
+        def add_xml_text_to_other_a(self, xml):
+            for node in xml.findall(".//a[@xml_text]"):
+                href = node.get("href")
+                if href:
+                    xml_text = node.get("xml_text")
+                    for n in xml.findall(".//a[@href='{}']".format(href)):
+                        if not n.get("xml_text"):
+                            n.set("xml_text", xml_text)
+                    for n in xml.findall(".//a[@name='{}']".format(href[1:])):
+                        if not n.get("xml_text"):
+                            n.set("xml_text", xml_text)
+
+        def transform(self, data):
+            raw, xml = data
+            logger.info("CompleteElementAWithXMLText")
+            self.add_xml_text_to_a_href(xml)
+            self.add_xml_text_to_other_a(xml)
             return data
 
     class DeduceAndSuggestConversionPipe(plumber.Pipe):
