@@ -1488,19 +1488,22 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
     class CompleteElementAWithXMLTextPipe(plumber.Pipe):
         """
-        Adiciona o atributo @xml_text ao elemento a, com o valor de seu rótulo.
-        Por exemplo, identificar se <a href="#2">2</a> é nota de rodapé ou
-        é Fig 2.
+        Adiciona o atributo @xml_text ao elemento a, com o valor completo 
+        de seu rótulo. Por exemplo, explicitar se <a href="#2">2</a> é
+        nota de rodapé <a href="#2" xml_text="2">2</a> ou 
+        Fig 2 <a href="#2" xml_text="figure 2">2</a>.
         """
         def add_xml_text_to_a_href(self, xml):
             previous = etree.Element("none")
-            for i, node in enumerate(xml.findall(".//a[@href]")):
-                text = get_node_text(node).lower()
-                node.set("xml_text", text)
-                if text[0].isdigit():
-                    xml_text = previous.get("xml_text")
-                    if xml_text and " " in xml_text:
-                        label, number = xml_text.split(" ")
+            for node in xml.findall(".//a[@href]"):
+                text = get_node_text(node)
+                if text:
+                    text = text.lower()
+                    node.set("xml_text", text)
+                    xml_text = previous.get("xml_text") or ""
+                    splitted = xml_text.split()
+                    if text[0].isdigit() and len(splitted) >= 2:
+                        label, number = splitted[:2]
                         if number[0] <= text[0]:
                             node.set("xml_text", label + " " + text)
                             logger.info(
@@ -2156,9 +2159,6 @@ class Document:
         return items
 
 
-NOT_FOUND = []
-
-
 class FileLocation:
     def __init__(self, href):
         self.href = href
@@ -2179,35 +2179,38 @@ class FileLocation:
         _local = os.path.join(config.get("SITE_SPS_PKG_PATH"), _local)
         return _local.replace("//", "/")
 
-    def ent2char(self, data):
-        return html.unescape(data.decode("utf-8")).encode("utf-8").strip()
-
     @property
     def content(self):
         _content = self.local_content
         if not _content:
-            if self.remote in NOT_FOUND:
-                return "<html><body/></html>"
-            logger.info("Baixar %s" % self.remote)
-            self.download()
-            _content = self.local_content
-            NOT_FOUND.append(self.remote)
+            _content = self.download()
+            if _content:
+                self.save(_content)
         logger.info("%s %s" % (len(_content or ""), self.local))
         return _content
 
     @property
     def local_content(self):
-        logger.info("Existe %s: %s" % (self.local, os.path.isfile(self.local)))
+        logger.info("Get local content from: %s" % self.local)
         if self.local and os.path.isfile(self.local):
+            logger.info("Found")
             with open(self.local, "rb") as fp:
                 return fp.read()
 
     def download(self):
+        logger.info("Download %s" % self.remote)
         r = requests.get(self.remote, timeout=TIMEOUT)
+        if r.status_code == 404:
+            logger.error(
+                "FAILURE. REQUIRES MANUAL INTERVENTION. Not found %s. " % self.remote)
+            return
         if not r.status_code == 200:
             logger.error(
-                "Falha ao acessar %s: %s" % (self.remote, r.status_code))
+                "%s: %s" % (self.remote, r.status_code))
             return
+        return r.content
+
+    def save(self, content):
         dirname = os.path.dirname(self.local)
         if not dirname.startswith(config.get("SITE_SPS_PKG_PATH")):
             logger.info(
@@ -2215,12 +2218,10 @@ class FileLocation:
                 % self.local
             )
             return
-        _content = r.content
         if not os.path.isdir(dirname):
             os.makedirs(dirname)
         with open(self.local, "wb") as fp:
-            fp.write(_content)
-        return _content
+            fp.write(content)
 
 
 def fix_img_revistas_path(node):
@@ -2279,10 +2280,12 @@ class Remote2LocalConversion:
         return []
 
     def remote_to_local(self):
-        self._import_all_href_html_files()
+        self._import_all_html_files_found_in_body()
         self._convert_a_href_into_images_or_media()
 
-    def _classify_a_href(self):
+    def _add_link_type_attribute_to_element_a(self):
+        if self.digital_assets_path is None:
+            return
         for node in self.xml.findall(".//*[@src]"):
             src = node.get("src")
             if ":" in src:
@@ -2340,22 +2343,25 @@ class Remote2LocalConversion:
                     a_href.set("link-type", "asset")
                 else:
                     logger.info("link-type=???")
-                logger.info("Classificou a[@href]: %s" % etree.tostring(a_href))
+                logger.info(
+                    "Classificou a[@href]: %s" % etree.tostring(a_href))
 
-    def _import_all_href_html_files(self):
-        self._classify_a_href()
+    def _import_all_html_files_found_in_body(self):
+        self._add_link_type_attribute_to_element_a()
         while True:
-            self._import_html_files_content()
-            self._classify_a_href()
             if self.body.find(".//a[@link-type='html']") is None:
                 break
+            self._import_files_marked_as_link_type_html()
+            self._add_link_type_attribute_to_element_a()
 
-    def _import_html_files_content(self):
+    def _import_files_marked_as_link_type_html(self):
         new_p_items = []
         for bodychild in self.body_children:
             for a_link_type in bodychild.findall(".//a[@link-type='html']"):
                 new_p = self._import_html_file_content(a_link_type)
-                if new_p is not None:
+                if new_p is None:
+                    a_link_type.set("link-type", "external")
+                else:
                     new_p_items.append((bodychild, new_p))
         for bodychild, new_p in new_p_items[::-1]:
             logger.info(
@@ -2493,3 +2499,4 @@ class Remote2LocalConversion:
             parent = asset.getparent()
             parent.remove(asset)
             self.names.append(new_href)
+
