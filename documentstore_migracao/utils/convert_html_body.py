@@ -1541,33 +1541,50 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
     class CompleteElementAWithXMLTextPipe(plumber.Pipe):
         """
-        Adiciona o atributo @xml_text ao elemento a, com o valor completo 
+        Adiciona o atributo @xml_text ao elemento a, com o valor completo
         de seu rótulo. Por exemplo, explicitar se <a href="#2">2</a> é
-        nota de rodapé <a href="#2" xml_text="2">2</a> ou 
+        nota de rodapé <a href="#2" xml_text="2">2</a> ou
         Fig 2 <a href="#2" xml_text="figure 2">2</a>.
         """
+        inferer = Inferer()
+
         def add_xml_text_to_a_href(self, xml):
+            for node in xml.getroottree().find("body").getchildren():
+                self.add_xml_text_to_a_href_in_p(node)
+
+        def add_xml_text_to_a_href_in_p(self, body_child):
             previous = etree.Element("none")
-            for node in xml.findall(".//a[@href]"):
+            for node in body_child.findall(".//a[@href]"):
                 text = get_node_text(node)
                 if text:
-                    text = text.lower()
+                    if len(text) == 1 and text.isalpha() and text == text.upper():
+                        pass
+                    else:
+                        text = text.lower()
                     node.set("xml_text", text)
+                if text and text[0].isdigit():
+                    # it is a note or other element
                     xml_text = previous.get("xml_text") or ""
                     splitted = xml_text.split()
-                    if text[0].isdigit() and len(splitted) >= 2:
+                    if len(splitted) >= 2:
                         label, number = splitted[:2]
-                        if number[0] <= text[0]:
+                        if self._is_a_sequence(number, text):
                             node.set("xml_text", label + " " + text)
-                            logger.info(
-                                "add_xml_text_to_a_href: %s " % etree.tostring(
-                                    previous)
-                            )
-                            logger.info(
-                                "add_xml_text_to_a_href: %s " % etree.tostring(
-                                    node)
-                            )
+                logger.info(etree.tostring(node))
                 previous = node
+
+        def _get_number(self, _string):
+            number = '0'
+            for c in _string:
+                if not c.isdigit():
+                    break
+                number += c
+            return int(number)
+
+        def _is_a_sequence(self, previous, next):
+            previous = self._get_number(previous)
+            next = self._get_number(next)
+            return previous + 1 == next or previous == next
 
         def add_xml_text_to_other_a(self, xml):
             for node in xml.findall(".//a[@xml_text]"):
@@ -1609,7 +1626,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             if text:
                 node.set("xml_label", text)
 
-        def _add_xml_attribs_to_a_href_from_text(self, texts):
+        def _add_xml_attribs_to_a_href_from_xml_text(self, texts):
             for text, data in texts.items():
                 nodes_with_id, nodes_without_id = data
                 tag_reftype = self.inferer.tag_and_reftype_from_a_href_text(text)
@@ -1726,7 +1743,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             texts, file_paths = document.a_href_items
             names = document.a_names
             images = document.images
-            self._add_xml_attribs_to_a_href_from_text(texts)
+            self._add_xml_attribs_to_a_href_from_xml_text(texts)
             self._add_xml_attribs_to_a_name(names)
             self._add_xml_attribs_to_a_href_from_file_paths(file_paths)
             self._add_xml_attribs_to_img(images)
@@ -1763,46 +1780,55 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
         def _exclude_invalid_a_name_and_identify_fn_label(self, items):
             if items[0].get("name"):
-                if len(items) > 1:
-                    items[0].tag = "_EXCLUDE_REMOVETAG"
                 root = items[0].getroottree()
+                if len(items) == 1:
+                    items[0].tag = "_EXCLUDE_REMOVETAG"
                 for a_href in items[1:]:
-                    found = None
-                    if self._might_be_fn_label(a_href):
-                        found = self._find_a_name_which_same_xml_text(
-                            root, a_href.get("xml_text")
-                        )
-                    if found is None:
-                        logger.info("remove: %s" % etree.tostring(a_href))
-                        _remove_element_or_comment(a_href)
-                    else:
-                        logger.info("Identifica como fn/label")
-                        logger.info(etree.tostring(a_href))
+                    xml_text = a_href.get("xml_text")
+                    if self._is_symbol_or_number_or_minuscule_letter(xml_text):
+                        self._set_label_of(root, a_href)
+                        if a_href.get("label-of"):
+                            items[0].tag = "_EXCLUDE_REMOVETAG"
+                        else:
+                            href = a_href.get("href")
+                            name = href[1:]
+                            a_name = root.find(".//a[@name='{}']".format(name))
+                            if a_name is None:
+                                logger.info(
+                                    "remove: %s" % etree.tostring(a_href))
+                                _remove_element_or_comment(a_href)
+
+        def _is_symbol_or_number_or_minuscule_letter(self, value):
+            if not value:
+                return
+            return any(
+                [value[0].isdigit(),
+                 not value[0].isalnum(),
+                 len(value) == 1 and value == value.lower(),
+                 ]
+            )
+
+        def _set_label_of(self, root, a_href):
+            href = a_href.get("href")
+            xml_text = a_href.get("xml_text")
+            label_of = None
+            for item in root.xpath(
+                    ".//a[@xml_text='{}' and @href]".format(xml_text)):
+                item_href = item.get("href")
+                if item_href and item_href != href:
+                    name = item_href[1:]
+                    related = root.find(".//a[@name='{}']".format(name))
+                    if related is not None:
+                        label_of = name
                         a_href.tag = "label"
-                        _id = found.get("name")
-                        if not _id and found.get("href"):
-                            _id = found.get("href")[1:]
-                        a_href.set("label-of", _id)
+                        a_href.set("label-of", label_of)
                         logger.info(etree.tostring(a_href))
+                        break
 
         def _exclude_invalid_unique_a_href(self, nodes):
             if len(nodes) == 1 and nodes[0].attrib.get("href"):
                 _remove_element_or_comment(nodes[0])
 
-        def _might_be_fn_label(self, a_href):
-            xml_text = a_href.get("xml_text")
-            if xml_text and get_node_text(a_href):
-                return any(
-                    [xml_text[0].isdigit(),
-                    not xml_text[0].isalnum(),
-                    xml_text[0].isalpha() and len(xml_text) == 1,
-                    ]
-                )
-
-        def _find_a_name_which_same_xml_text(self, root, xml_text):
-            for item in root.findall(".//a[@xml_text='{}']".format(xml_text)):
-                return item
-                
         def transform(self, data):
             raw, xml = data
             logger.info("EvaluateElementAToDeleteOrCreateFnLabelPipe")
@@ -2260,7 +2286,7 @@ class Document:
         file_paths = {}
         for a_href in self.xmltree.findall(".//a[@href]"):
             href = a_href.attrib.get("href").strip()
-            text = get_node_text(a_href).lower().strip()
+            text = a_href.get("xml_text")
 
             if text:
                 if text not in texts.keys():
