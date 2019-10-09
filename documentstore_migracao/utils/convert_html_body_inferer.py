@@ -50,7 +50,12 @@ class Inferer:
     def tag_and_reftype_from_a_href_text(self, a_href_text):
         if not (a_href_text or "").strip():
             return
-        a_href_text = a_href_text.strip().lower()
+        a_href_text = a_href_text.strip()
+        if a_href_text.isalpha() and len(a_href_text) == 1 and a_href_text == a_href_text.upper():
+            # letra maiúscula, nao é fn
+            return
+
+        a_href_text = a_href_text.lower()
         for i, c in enumerate(a_href_text):
             if c.isalnum():
                 break
@@ -70,7 +75,8 @@ class Inferer:
                 return "fig", "fig"
             if "annex" in text:
                 return "app", "app"
-            return "undefined", "undefined"
+            print("undefined: %s" % (a_href_text))
+            return
         return "fn", "fn"
 
     def tag_and_reftype_and_id_from_filepath(self, file_path, elem_name=None):
