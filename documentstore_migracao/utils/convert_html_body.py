@@ -1390,6 +1390,13 @@ class ConvertElementsWhichHaveIdPipeline(object):
         def transform(self, data):
             raw, xml = data
             self._fix_a_href(xml)
+
+            if xml.find(".//a[@href='#top']") is not None:
+                if xml.find(".//a[@name='top']") is None:
+                    a = etree.Element("a")
+                    a.set("name", "top")
+                    xml.find(".").insert(0, a)
+
             _process(xml, "a[@id]", self.parser_node)
             _process(xml, "a[@name]", self.parser_node)
             return data
@@ -1765,6 +1772,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     self._update_a_href_items(a_hrefs, new_id, reftype)
                 else:
                     self._remove_a(a_name, a_hrefs)
+            for a in xml.findall(".//a"):
+                print(etree.tostring(a))
             return data
 
     class AssetElementFixPositionPipe(plumber.Pipe):
