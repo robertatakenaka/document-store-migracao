@@ -1317,18 +1317,18 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.CreateDispFormulaPipe(),
             self.AssetElementAddContentPipe(),
             self.AssetElementIdentifyLabelAndCaptionPipe(),
-            self.AssetElementFixPipe(),
-            self.CreateInlineFormulaPipe(),
-            self.AppendixPipe(),
-            self.TablePipe(),
-            self.SupplementaryMaterialPipe(),
-            self.RemoveXMLAttributesPipe(),
-            self.ImgPipe(),
-            self.FnMovePipe(),
-            self.FnLabelOfPipe(),
-            self.FnAddContentPipe(),
-            self.FnIdentifyLabelAndPPipe(),
-            self.FnFixContentPipe(),
+            # self.AssetElementFixPipe(),
+            # self.CreateInlineFormulaPipe(),
+            # self.AppendixPipe(),
+            # self.TablePipe(),
+            # self.SupplementaryMaterialPipe(),
+            # self.RemoveXMLAttributesPipe(),
+            # self.ImgPipe(),
+            # self.FnMovePipe(),
+            # self.FnLabelOfPipe(),
+            # self.FnAddContentPipe(),
+            # self.FnIdentifyLabelAndPPipe(),
+            # self.FnFixContentPipe(),
         )
 
     def deploy(self, raw):
@@ -1967,6 +1967,8 @@ class ConvertElementsWhichHaveIdPipeline(object):
             logger.info("AssetElementIdentifyLabelAndCaptionPipe")
             for asset_node in xml.findall(".//*[@status='identify-content']"):
                 self._mark_label_and_caption(asset_node)
+                if asset_node.find("label") is None:
+                    self._create_label_from_xml_text(asset_node)
             return data
 
         def _add_nodes_to_element_title(self, nodes_for_title, n):
@@ -2063,6 +2065,17 @@ class ConvertElementsWhichHaveIdPipeline(object):
                     title.append(deepcopy(n))
                     p = n.getparent()
                     p.remove(n)
+
+        def _create_label_from_xml_text(self, asset_node):
+            if (asset_node.tag == "table-wrap" and
+                asset_node.find("label") is None and
+                asset_node.get("xml_text")):
+                label = etree.Element("label")
+                label.text = asset_node.get("xml_text").title()
+                if label.text.endswith("s"):
+                    label.text = label.text[:-1]
+                asset_node.insert(0, label)
+
 
     class AssetElementFixPipe(plumber.Pipe):
         COMPONENT_TAGS = ("label", "caption", "img")
