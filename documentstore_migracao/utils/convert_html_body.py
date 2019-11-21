@@ -1652,6 +1652,9 @@ class ConvertElementsWhichHaveIdPipeline(object):
 
         def _exclude_invalid_a_name_and_identify_fn_label(self, items):
             if items[0].get("name"):
+                xml_text = items[0].get("xml_text")
+                if xml_text and " " in xml_text:
+                    return
                 if len(items) > 1:
                     items[0].tag = "_EXCLUDE_REMOVETAG"
                 root = items[0].getroottree()
