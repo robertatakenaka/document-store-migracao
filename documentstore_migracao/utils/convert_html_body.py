@@ -1317,18 +1317,18 @@ class ConvertElementsWhichHaveIdPipeline(object):
             self.CreateDispFormulaPipe(),
             self.AssetElementAddContentPipe(),
             self.AssetElementIdentifyLabelAndCaptionPipe(),
-            # self.AssetElementFixPipe(),
-            # self.CreateInlineFormulaPipe(),
-            # self.AppendixPipe(),
-            # self.TablePipe(),
-            # self.SupplementaryMaterialPipe(),
-            # self.RemoveXMLAttributesPipe(),
-            # self.ImgPipe(),
-            # self.FnMovePipe(),
-            # self.FnLabelOfPipe(),
-            # self.FnAddContentPipe(),
-            # self.FnIdentifyLabelAndPPipe(),
-            # self.FnFixContentPipe(),
+            self.AssetElementFixPipe(),
+            self.CreateInlineFormulaPipe(),
+            self.AppendixPipe(),
+            self.TablePipe(),
+            self.SupplementaryMaterialPipe(),
+            self.RemoveXMLAttributesPipe(),
+            self.ImgPipe(),
+            self.FnMovePipe(),
+            self.FnLabelOfPipe(),
+            self.FnAddContentPipe(),
+            self.FnIdentifyLabelAndPPipe(),
+            self.FnFixContentPipe(),
         )
 
     def deploy(self, raw):
@@ -1967,7 +1967,7 @@ class ConvertElementsWhichHaveIdPipeline(object):
             logger.info("AssetElementIdentifyLabelAndCaptionPipe")
             for asset_node in xml.findall(".//*[@status='identify-content']"):
                 self._mark_label_and_caption(asset_node)
-                if asset_node.find("label") is None:
+                if asset_node.getchildren() and asset_node.find("label") is None:
                     self._create_label_from_xml_text(asset_node)
             return data
 
@@ -2075,7 +2075,6 @@ class ConvertElementsWhichHaveIdPipeline(object):
                 if label.text.endswith("s"):
                     label.text = label.text[:-1]
                 asset_node.insert(0, label)
-
 
     class AssetElementFixPipe(plumber.Pipe):
         COMPONENT_TAGS = ("label", "caption", "img")
@@ -2842,6 +2841,7 @@ class Remote2LocalConversion:
     """
 
     IMG_EXTENSIONS = (".gif", ".jpg", ".jpeg", ".svg", ".png", ".tif", ".bmp")
+    ANCHOR_PREFIX = "__"
 
     def __init__(self, xml):
         self.xml = xml
@@ -2988,7 +2988,7 @@ class Remote2LocalConversion:
             if html_tree is not None:
                 html_body = html_tree.find(".//body")
                 if html_body is not None:
-                    return self._convert_a_href(node_a, new_href, html_body)
+                    return self._convert_a_href(node_a, new_href, html_body, anchor)
 
     def _convert_a_href_into_images_or_media(self):
         new_p_items = []
@@ -3007,10 +3007,10 @@ class Remote2LocalConversion:
             bodychild.addnext(new_p)
         return len(new_p_items)
 
-    def _convert_a_href(self, node_a, new_href, html_body=None):
+    def _convert_a_href(self, node_a, new_href, html_body=None, anchor=None):
         location = node_a.get("href")
 
-        self._update_a_href(node_a, new_href)
+        self._update_a_href(node_a, new_href, anchor)
         content_type = "asset"
         if html_body is not None:
             content_type = "html"
@@ -3019,7 +3019,8 @@ class Remote2LocalConversion:
         found_a_name = self.find_a_name(node_a, new_href, delete_tag)
         if not found_a_name:
             if html_body is not None:
-                node_content = self._imported_html_body(new_href, html_body, delete_tag)
+                node_content = self._imported_html_body(
+                    new_href, html_body, delete_tag)
             else:
                 node_content = self._asset_data(node_a, location, new_href)
             if node_content is not None:
@@ -3028,7 +3029,9 @@ class Remote2LocalConversion:
                 )
                 return new_p
 
-    def _update_a_href(self, a_href, new_href):
+    def _update_a_href(self, a_href, new_href, anchor):
+        if anchor:
+            new_href += self.ANCHOR_PREFIX + anchor
         a_href.set("href", "#" + new_href)
         a_href.set("link-type", "internal")
         logger.info("Atualiza a[@href]: %s" % etree.tostring(a_href))
@@ -3052,11 +3055,19 @@ class Remote2LocalConversion:
         a_name = etree.Element("a")
         a_name.set("id", new_href)
         a_name.set("name", new_href)
-        a_name.append(node_content)
 
         new_p = etree.Element("p")
         new_p.set("content-type", content_type)
         new_p.append(a_name)
+
+        if len(node_content.findall(".//img")) == 1:
+            # cria a[@name] que envolva o node_content
+            a_name.append(node_content)
+        else:
+            # cria a[@name] antes do node_content
+            # pois contém mais de 1 asset
+            a_name.addnext(node_content)
+
         etree.strip_tags(new_p, delete_tag)
         logger.info("Cria novo p: %s" % etree.tostring(new_p))
 
@@ -3070,9 +3081,9 @@ class Remote2LocalConversion:
             logger.info("Encontrado elem a no body importado: %s" % etree.tostring(a))
             href = a.get("href")
             if href and href[0] == "#":
-                a.set("href", "#" + new_href + href[1:].replace("#", "X"))
+                a.set("href", "#" + new_href + self.ANCHOR_PREFIX + href[1:])
             elif a.get("name"):
-                a.set("name", new_href + "X" + a.get("name"))
+                a.set("name", new_href + self.ANCHOR_PREFIX + a.get("name"))
             logger.info("Atualiza elem a importado: %s" % etree.tostring(a))
 
         a_name = body.find(".//a[@name='{}']".format(new_href))
