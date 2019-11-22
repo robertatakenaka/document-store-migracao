@@ -32,6 +32,10 @@ class Inferer:
     def tag_and_reftype_from_name(self, name):
         if not name:
             return
+        if len(name) > 3 and name[2] == "_" and name[:2].isalpha():
+            # para lidar com o formato en_a05tab03
+            name = name.split("_")[1]
+            print(name)
         k = name[0]
         if k.isalpha():
             for clue, tag in self.rules.sorted_by_clue_first_char.get(k, []):
